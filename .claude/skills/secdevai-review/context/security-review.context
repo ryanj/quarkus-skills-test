@@ -1,0 +1,370 @@
+# 🔒 Security Code Review Context
+
+**Purpose**: Provide comprehensive security analysis guidelines for AI-powered code review
+
+## 🎯 Core Security Principles
+
+Follow these fundamental security principles:
+
+1. **Complete Mediation**: Every access request must be validated and authorized
+2. **Defense in Depth**: Use multiple, layered security controls
+3. **Least Privilege**: Grant only minimum permissions necessary
+4. **Secure by Design, Default, Deployment**: Ship with secure defaults, deny by default
+5. **Access Control**: Implement fine-grained access controls to check what actions each user or process is authorized to perform
+6. **Secure data in transit and at rest**: All external communication must be encrypted, sensitive data must be stored using strong encryption mechanisms
+7. **Least Common Mechanism**: Use isolation of components and avoid single point of failure
+8. **Monitoring and Updating**: All Sensitive admin actions must be logged, upgrade mechanisms should be available with zero downtime
+
+---
+
+## 📋 OWASP Top 10 (2021) - Python Patterns
+
+### A01: Broken Access Control
+**Patterns to detect**:
+- Missing authorization checks before sensitive operations
+- Direct object references without validation
+- Insecure direct object references (IDOR)
+- Missing access control on API endpoints
+- Privilege escalation vulnerabilities
+
+**Python Examples**:
+```python
+# BAD: No access control
+def delete_user(user_id):
+    User.objects.get(id=user_id).delete()
+
+# GOOD: Check permissions
+def delete_user(user_id):
+    if not current_user.is_admin:
+        raise PermissionDenied
+    User.objects.get(id=user_id).delete()
+```
+
+### A02: Cryptographic Failures
+**Patterns to detect**:
+- Weak hashing algorithms (MD5, SHA1)
+- Insecure random number generation (`random` instead of `secrets`)
+- Hardcoded encryption keys or passwords
+- Weak encryption algorithms
+- Missing encryption for sensitive data
+
+**Python Examples**:
+```python
+# BAD: Weak random
+import random
+token = random.randint(1, 1000)
+
+# GOOD: Cryptographically secure
+import secrets
+token = secrets.token_urlsafe(32)
+
+# BAD: Weak hash
+import hashlib
+hash = hashlib.md5(password.encode()).hexdigest()
+
+# GOOD: Strong hash with salt
+import hashlib
+import secrets
+salt = secrets.token_bytes(16)
+hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
+```
+
+### A03: Injection
+**Patterns to detect**:
+- SQL injection (string concatenation in queries)
+- Command injection (`subprocess`, `os.system`, `eval`)
+- LDAP injection
+- Template injection
+- Path injection
+
+**Python Examples**:
+```python
+# BAD: SQL injection
+query = f"SELECT * FROM users WHERE name = '{user_input}'"
+
+# GOOD: Parameterized query
+query = "SELECT * FROM users WHERE name = %s"
+cursor.execute(query, (user_input,))
+
+# BAD: Command injection
+import subprocess
+subprocess.call(f"rm {user_input}", shell=True)
+
+# GOOD: Safe command execution
+import subprocess
+subprocess.call(["rm", user_input])  # Still validate user_input!
+```
+
+### A04: Insecure Design
+**Patterns to detect**:
+- Missing security controls in design
+- Insecure default configurations
+- Missing threat modeling
+- Insecure data flow
+
+### A05: Security Misconfiguration
+**Patterns to detect**:
+- Default credentials
+- Unnecessary features enabled
+- Missing security headers
+- Insecure CORS configuration
+- Debug mode enabled in production
+- Exposed sensitive files (.env, .git)
+
+**Python Examples**:
+```python
+# BAD: Debug in production
+DEBUG = True  # Should be False in production
+
+# BAD: Exposed secrets
+SECRET_KEY = "hardcoded-secret-key"
+```
+
+### A06: Vulnerable and Outdated Components
+**Patterns to detect**:
+- Outdated dependencies with known vulnerabilities
+- Missing security updates
+- Unmaintained libraries
+
+**Check**: Use `safety` or `pip-audit` to check dependencies
+
+### A07: Identification and Authentication Failures
+**Patterns to detect**:
+- Weak password policies
+- Missing multi-factor authentication
+- Session fixation vulnerabilities
+- Insecure session management
+- Credential stuffing vulnerabilities
+
+**Python Examples**:
+```python
+# BAD: Weak password check
+if len(password) >= 6:
+    return True
+
+# GOOD: Strong password policy
+import re
+if (len(password) >= 12 and 
+    re.search(r'[A-Z]', password) and
+    re.search(r'[a-z]', password) and
+    re.search(r'[0-9]', password) and
+    re.search(r'[^A-Za-z0-9]', password)):
+    return True
+```
+
+### A08: Software and Data Integrity Failures
+**Patterns to detect**:
+- Unsafe deserialization (`pickle.load`, `yaml.load`)
+- Missing integrity checks
+- Insecure CI/CD pipelines
+
+**Python Examples**:
+```python
+# BAD: Unsafe deserialization
+import pickle
+data = pickle.load(open('file.pkl', 'rb'))
+
+# GOOD: Safe deserialization with validation
+import pickle
+import hmac
+# Validate signature before deserializing
+```
+
+### A09: Security Logging and Monitoring Failures
+**Patterns to detect**:
+- Missing security event logging
+- Insufficient log detail
+- Missing alerting on suspicious activities
+- Log injection vulnerabilities
+
+### A10: Server-Side Request Forgery (SSRF)
+**Patterns to detect**:
+- User-controlled URLs in requests
+- Missing URL validation
+- Internal network access without restrictions
+
+**Python Examples**:
+```python
+# BAD: SSRF vulnerability
+import requests
+url = request.GET.get('url')
+response = requests.get(url)
+
+# GOOD: Validate and restrict URLs
+import requests
+from urllib.parse import urlparse
+
+url = request.GET.get('url')
+parsed = urlparse(url)
+if parsed.hostname not in ALLOWED_HOSTS:
+    raise ValueError("Invalid hostname")
+response = requests.get(url, timeout=5)
+```
+
+---
+
+## 🐍 Common Python Security Patterns
+
+### Hardcoded Secrets
+**Pattern**: API keys, passwords, tokens hardcoded in source
+```python
+# BAD
+API_KEY = "sk-1234567890abcdef"
+password = "admin123"
+
+# GOOD: Use environment variables
+import os
+API_KEY = os.getenv("API_KEY")
+```
+
+### Path Traversal
+**Pattern**: File operations without path validation
+```python
+# BAD
+file_path = os.path.join("/data", user_input)
+with open(file_path, 'r') as f:
+    content = f.read()
+
+# GOOD: Validate and sanitize
+from pathlib import Path
+base_path = Path("/data").resolve()
+user_path = Path(user_input).resolve()
+if not str(user_path).startswith(str(base_path)):
+    raise ValueError("Invalid path")
+```
+
+### Insecure File Operations
+**Pattern**: World-readable files, insecure permissions
+```python
+# BAD
+with open("config.json", "w") as f:
+    f.write(secrets)
+
+# GOOD: Restrict permissions
+import os
+with open("config.json", "w") as f:
+    f.write(secrets)
+os.chmod("config.json", 0o600)  # Read/write for owner only
+```
+
+### Insecure HTTP Requests
+**Pattern**: Missing SSL verification
+```python
+# BAD
+import requests
+response = requests.get("https://api.example.com", verify=False)
+
+# GOOD: Always verify SSL
+response = requests.get("https://api.example.com", verify=True)
+```
+
+### Missing Input Validation
+**Pattern**: User input used without validation
+```python
+# BAD
+def process_data(user_input):
+    return user_input.upper()
+
+# GOOD: Validate and sanitize
+def process_data(user_input):
+    if not isinstance(user_input, str):
+        raise TypeError("Input must be string")
+    if len(user_input) > 1000:
+        raise ValueError("Input too long")
+    return user_input.strip().upper()
+```
+
+---
+
+## 🔍 Analysis Workflow
+
+1. **Parse Code Structure**
+   - Identify functions, classes, imports
+   - Track data flow
+   - Identify user input sources
+
+2. **Pattern Matching**
+   - Scan for security anti-patterns
+   - Check for vulnerable function calls
+   - Identify insecure configurations
+
+3. **Severity Classification**
+   - **Critical**: Remote code execution, authentication bypass, data breach
+   - **High**: SQL injection, command injection, sensitive data exposure
+   - **Medium**: Weak cryptography, missing validation, insecure defaults
+   - **Low**: Information disclosure, missing logging, code quality issues
+   - **Info**: Best practice suggestions, optimization opportunities
+
+4. **Context-Aware Analysis**
+   - Consider surrounding code context
+   - Check if mitigations are in place
+   - Verify if patterns are actually exploitable
+
+5. **Remediation Suggestions**
+   - Provide specific code fixes
+   - Show before/after examples
+   - Reference security best practices
+   - Link to OWASP documentation
+
+---
+
+## 📊 Output Format
+
+### Finding Structure
+```
+## 🔴 **Critical: [Vulnerability Type]**
+
+**Location**: `file.py:42`
+**OWASP Category**: A03: Injection
+**CWE**: CWE-89 (when applicable — always include CWE ID for CWE/SANS Top 25 entries)
+**Description**: [Clear explanation]
+
+**Vulnerable Code**:
+```python
+[code snippet]
+```
+
+**Risk**: [Impact explanation]
+
+**Remediation**:
+```python
+[fixed code]
+```
+
+**References**:
+- OWASP: [link]
+- CWE: [link]
+- SANS Top 25: https://www.sans.org/top25-software-errors (when finding maps to a Top 25 entry)
+```
+
+### Prioritization
+- Present Critical findings first
+- Group by severity
+- Show file and line numbers
+- Include code references
+
+---
+
+## 🛠️ Tool Integration
+
+If external tools are used (via `secdevai-tool`):
+- Synthesize tool findings with AI analysis
+- Remove duplicates
+- Enhance tool findings with context
+- Show which findings came from tools vs AI
+
+---
+
+## ⚠️ Important Rules
+
+1. **Never modify code without explicit user approval**
+2. **Always show preview before suggesting changes**
+3. **Explain security implications clearly**
+4. **Respect `.secdevaiignore` file**
+5. **Cache results to avoid re-scanning**
+6. **Provide actionable, specific recommendations**
+
+---
+
+**Remember**: The goal is to help developers write secure code, not to overwhelm them. Be clear, specific, and actionable. 🚀
+

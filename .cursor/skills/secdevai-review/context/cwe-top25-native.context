@@ -1,0 +1,548 @@
+# 🔒 CWE/SANS Top 25 — Native & Systems Code Security Context
+
+**Purpose**: Security analysis guidelines for native and systems-level code—memory safety, integer safety, concurrency, and privilege patterns for AI-powered code review
+
+**Scope**: C, C++, Rust (unsafe blocks), and other compiled/systems languages. Use alongside `security-review.context` for OWASP framing. Based on the [CWE/SANS Top 25 Most Dangerous Software Errors](https://www.sans.org/top25-software-errors).
+
+---
+
+## 🎯 Key Differences from Web-Focused Review
+
+Native code introduces vulnerability classes rarely seen in managed languages:
+
+| Category | Web/Managed Languages | Native/Systems Languages |
+|---|---|---|
+| Memory safety | GC handles allocation | Manual allocation → use-after-free, buffer overflows |
+| Integer safety | Arbitrary precision or overflow-safe | Fixed-width integers → overflow, truncation |
+| Concurrency | Often thread-safe by default | Raw threads, shared memory → data races, TOCTOU |
+| Privilege | App-level permissions | System-level: setuid, capabilities, file modes |
+| Pointers | References / no pointers | Raw pointers → null deref, dangling pointers, type confusion |
+
+---
+
+## 📋 CWE/SANS Top 25 — Native Code Patterns
+
+### CWE-787: Out-of-bounds Write (Rank #1)
+
+**Patterns to detect**:
+- `strcpy`, `strcat`, `sprintf`, `gets` without bounds checking
+- Array indexing without length validation
+- `memcpy`/`memmove` with user-controlled size
+- Stack buffer overflows via unbounded input
+
+**C/C++ Examples**:
+```c
+// BAD: Unbounded copy — classic buffer overflow
+char buf[64];
+strcpy(buf, user_input);  // CWE-787
+
+// GOOD: Bounded copy
+char buf[64];
+strncpy(buf, user_input, sizeof(buf) - 1);
+buf[sizeof(buf) - 1] = '\0';
+
+// BETTER (C11): Use safe alternatives
+char buf[64];
+strncpy_s(buf, sizeof(buf), user_input, _TRUNCATE);
+```
+
+```cpp
+// BAD: Unchecked vector access
+std::vector<int> v = get_data();
+int val = v[user_index];  // No bounds check
+
+// GOOD: Use .at() for bounds-checked access
+int val = v.at(user_index);  // Throws std::out_of_range
+```
+
+### CWE-416: Use After Free (Rank #4)
+
+**Patterns to detect**:
+- `free()` followed by pointer dereference
+- Returning pointers to local/freed memory
+- Double-free conditions
+- Dangling pointers after container operations (C++ iterators)
+
+**C/C++ Examples**:
+```c
+// BAD: Use after free
+char *ptr = malloc(128);
+process(ptr);
+free(ptr);
+log_result(ptr);  // CWE-416: dangling pointer
+
+// GOOD: Nullify after free
+free(ptr);
+ptr = NULL;
+```
+
+```cpp
+// BAD: Dangling iterator after container modification
+auto it = vec.begin();
+vec.push_back(42);  // May invalidate iterators
+*it = 10;  // CWE-416
+
+// GOOD: Re-acquire iterator after modification
+vec.push_back(42);
+auto it = vec.begin();
+```
+
+### CWE-125: Out-of-bounds Read (Rank #7)
+
+**Patterns to detect**:
+- Reading beyond buffer boundaries (information leak, Heartbleed-style)
+- Off-by-one in loop bounds
+- `strlen` on unterminated strings
+- `memcmp`/`memcpy` with incorrect size
+
+**C/C++ Examples**:
+```c
+// BAD: Read past buffer end
+char buf[10];
+recv(sock, buf, 10, 0);
+for (int i = 0; i <= 10; i++) {  // Off-by-one: should be < 10
+    putchar(buf[i]);  // CWE-125
+}
+
+// GOOD: Correct bounds
+for (int i = 0; i < 10; i++) {
+    putchar(buf[i]);
+}
+```
+
+### CWE-476: NULL Pointer Dereference (Rank #12)
+
+**Patterns to detect**:
+- Dereferencing return values without null check (`malloc`, `fopen`, `strstr`)
+- Null pointer passed to functions that don't handle it
+- Missing null guard after type-cast or lookup
+
+**C/C++ Examples**:
+```c
+// BAD: No null check after malloc
+int *arr = malloc(n * sizeof(int));
+arr[0] = 42;  // CWE-476 if malloc returns NULL
+
+// GOOD: Check return value
+int *arr = malloc(n * sizeof(int));
+if (arr == NULL) {
+    return -ENOMEM;
+}
+arr[0] = 42;
+```
+
+```cpp
+// BAD: Unchecked dynamic_cast
+Derived *d = dynamic_cast<Derived*>(base_ptr);
+d->method();  // CWE-476 if cast fails
+
+// GOOD: Check before use
+if (auto *d = dynamic_cast<Derived*>(base_ptr)) {
+    d->method();
+}
+```
+
+### CWE-190: Integer Overflow or Wraparound (Rank #14)
+
+**Patterns to detect**:
+- Arithmetic on user-controlled integers without overflow check
+- Size calculations: `malloc(n * sizeof(T))` where n is user-controlled
+- Signed/unsigned comparison or conversion
+- Truncation when assigning larger type to smaller type
+
+**C/C++ Examples**:
+```c
+// BAD: Integer overflow in allocation size
+size_t count = get_user_count();  // User-controlled
+size_t size = count * sizeof(struct record);  // CWE-190: wraps if count is large
+char *buf = malloc(size);  // Allocates tiny buffer, writes past end
+
+// GOOD: Check for overflow before allocation
+if (count > SIZE_MAX / sizeof(struct record)) {
+    return -EINVAL;
+}
+size_t size = count * sizeof(struct record);
+char *buf = malloc(size);
+```
+
+```cpp
+// BAD: Signed/unsigned mismatch
+int len = get_length();  // Could be negative
+memcpy(dst, src, len);  // Interpreted as huge unsigned value
+
+// GOOD: Validate before use
+int len = get_length();
+if (len < 0 || (size_t)len > dst_capacity) {
+    return -EINVAL;
+}
+memcpy(dst, src, (size_t)len);
+```
+
+### CWE-119: Improper Restriction of Memory Buffer Operations (Rank #17)
+
+**Patterns to detect**:
+- Unbounded `memcpy`, `memmove`, `memset` with user-controlled length
+- Stack-allocated buffers used with variable-length input
+- Missing bounds checks in custom parsers or protocol handlers
+- VLA (variable-length array) with unchecked size
+
+**C/C++ Examples**:
+```c
+// BAD: User controls memcpy length
+void parse_packet(const char *data, size_t data_len) {
+    char header[16];
+    uint32_t payload_len = *(uint32_t *)data;
+    memcpy(header, data + 4, payload_len);  // CWE-119
+}
+
+// GOOD: Validate length against buffer size
+void parse_packet(const char *data, size_t data_len) {
+    char header[16];
+    if (data_len < 4) return;
+    uint32_t payload_len = *(uint32_t *)data;
+    if (payload_len > sizeof(header) || payload_len > data_len - 4) return;
+    memcpy(header, data + 4, payload_len);
+}
+```
+
+### CWE-362: Race Condition (Rank #21)
+
+**Patterns to detect**:
+- TOCTOU (time-of-check-time-of-use) on filesystem operations
+- Unprotected shared state across threads (no mutex/lock)
+- Signal handlers accessing shared data
+- `stat()` then `open()` without O_NOFOLLOW or atomic operations
+
+**C/C++ Examples**:
+```c
+// BAD: TOCTOU race on file
+if (access(path, W_OK) == 0) {  // Check
+    fd = open(path, O_WRONLY);    // Use — file could change between check and open
+}
+
+// GOOD: Open and check permissions atomically
+fd = open(path, O_WRONLY | O_NOFOLLOW);
+if (fd < 0) {
+    handle_error();
+}
+```
+
+```cpp
+// BAD: Unprotected shared state
+int counter = 0;
+void worker() { counter++; }  // CWE-362: data race
+
+// GOOD: Use mutex or atomic
+std::atomic<int> counter{0};
+void worker() { counter.fetch_add(1); }
+```
+
+### CWE-78: OS Command Injection (Rank #5)
+
+**Patterns to detect**:
+- `system()`, `popen()` with user-controlled strings
+- Shell metacharacter injection via string concatenation
+- `execvp`/`execve` with unsanitized arguments
+
+**C/C++ Examples**:
+```c
+// BAD: Command injection via system()
+char cmd[256];
+snprintf(cmd, sizeof(cmd), "ls %s", user_input);
+system(cmd);  // CWE-78: user_input may contain "; rm -rf /"
+
+// GOOD: Use exec* family with argument array; validate input
+char *args[] = {"ls", validated_path, NULL};
+execvp("ls", args);
+```
+
+### CWE-22: Path Traversal (Rank #8)
+
+**Patterns to detect**:
+- File paths constructed from user input without canonicalization
+- `../` sequences not stripped or rejected
+- Symlink following without restriction
+
+**C/C++ Examples**:
+```c
+// BAD: Unsanitized path
+char filepath[PATH_MAX];
+snprintf(filepath, sizeof(filepath), "/data/%s", user_filename);
+FILE *f = fopen(filepath, "r");  // CWE-22: user_filename = "../../etc/passwd"
+
+// GOOD: Resolve and validate path stays under base
+char resolved[PATH_MAX];
+char filepath[PATH_MAX];
+snprintf(filepath, sizeof(filepath), "/data/%s", user_filename);
+if (realpath(filepath, resolved) == NULL) { return -1; }
+if (strncmp(resolved, "/data/", 6) != 0) { return -1; }
+FILE *f = fopen(resolved, "r");
+```
+
+### CWE-798: Use of Hard-coded Credentials (Rank #18)
+
+**Patterns to detect**:
+- String literals matching password/key/token/secret patterns
+- Compiled-in default passwords or API keys
+- Hardcoded symmetric keys or private keys
+
+**C/C++ Examples**:
+```c
+// BAD: Hardcoded credentials
+const char *db_password = "s3cret123";  // CWE-798
+
+// GOOD: Read from environment or config at runtime
+const char *db_password = getenv("DB_PASSWORD");
+if (db_password == NULL) {
+    fprintf(stderr, "DB_PASSWORD not set\n");
+    exit(1);
+}
+```
+
+### CWE-276: Incorrect Default Permissions (Rank #25)
+
+**Patterns to detect**:
+- Files or directories created with world-writable permissions
+- `umask(0)` or `chmod(path, 0777)`
+- Sensitive files (keys, configs) created without restrictive permissions
+
+**C/C++ Examples**:
+```c
+// BAD: World-readable credentials file
+int fd = open("/etc/myapp/secrets.conf", O_CREAT | O_WRONLY, 0644);  // CWE-276
+
+// GOOD: Owner-only permissions
+int fd = open("/etc/myapp/secrets.conf", O_CREAT | O_WRONLY, 0600);
+```
+
+### CWE-20: Improper Input Validation (Rank #6)
+
+**Patterns to detect**:
+- User input used directly without length, range, or type checks
+- Missing validation on protocol fields, command arguments, environment variables
+- Accepting negative sizes or zero-length allocations
+
+**C/C++ Examples**:
+```c
+// BAD: No validation on user-supplied length
+void read_data(int sock) {
+    uint32_t len;
+    recv(sock, &len, sizeof(len), 0);
+    char *buf = malloc(len);  // CWE-20: len could be 0 or enormous
+    recv(sock, buf, len, 0);
+}
+
+// GOOD: Validate bounds
+void read_data(int sock) {
+    uint32_t len;
+    recv(sock, &len, sizeof(len), 0);
+    len = ntohl(len);
+    if (len == 0 || len > MAX_MSG_SIZE) {
+        return;
+    }
+    char *buf = malloc(len);
+    if (buf == NULL) return;
+    recv(sock, buf, len, 0);
+}
+```
+
+### CWE-269: Improper Privilege Management (Rank #22)
+
+**Patterns to detect**:
+- Running as root when not necessary
+- Failing to drop privileges after binding to privileged ports
+- setuid binaries with excessive scope
+- Capabilities not minimized
+
+**C/C++ Examples**:
+```c
+// BAD: Keep root privileges after startup
+int main() {
+    bind_to_port_80();
+    serve_requests();  // Still running as root
+}
+
+// GOOD: Drop privileges after bind
+int main() {
+    bind_to_port_80();
+    drop_privileges("nobody");  // setuid/setgid to unprivileged user
+    serve_requests();
+}
+```
+
+### CWE-502: Deserialization of Untrusted Data (Rank #15)
+
+**Patterns to detect**:
+- Deserializing binary formats (protobuf, msgpack, custom) from untrusted sources without schema validation
+- Type confusion through serialized data
+- Buffer overruns in custom deserialization code
+
+**C/C++ Examples**:
+```c
+// BAD: Custom deserialization without validation
+struct msg {
+    uint32_t type;
+    uint32_t len;
+    char data[];
+};
+struct msg *m = (struct msg *)network_buffer;
+process(m->data, m->len);  // CWE-502 + CWE-119: len not validated
+
+// GOOD: Validate all fields before use
+if (total_len < sizeof(struct msg)) return -1;
+struct msg *m = (struct msg *)network_buffer;
+uint32_t len = ntohl(m->len);
+if (len > total_len - sizeof(struct msg)) return -1;
+if (ntohl(m->type) > MSG_TYPE_MAX) return -1;
+process(m->data, len);
+```
+
+---
+
+## 🛡️ Additional Native Code Patterns
+
+### Format String Vulnerabilities
+
+**Patterns to detect**:
+- User-controlled format strings in `printf`, `syslog`, `fprintf`
+- Missing format specifier (passing user string as first argument)
+
+```c
+// BAD: Format string attack
+printf(user_input);  // CWE-134: attacker supplies "%x%x%x%n"
+
+// GOOD: Always use a format specifier
+printf("%s", user_input);
+```
+
+### Double Free
+
+**Patterns to detect**:
+- `free()` called twice on the same pointer
+- Error paths that free memory already freed in the success path
+
+```c
+// BAD: Double free
+free(ptr);
+if (error) {
+    free(ptr);  // CWE-415
+}
+
+// GOOD: Nullify after free, check before free
+free(ptr);
+ptr = NULL;
+if (error) {
+    free(ptr);  // Safe: free(NULL) is a no-op
+}
+```
+
+### Uninitialized Memory
+
+**Patterns to detect**:
+- Stack variables used before initialization
+- `malloc` without `memset` or initialization before read
+- Struct padding leaked to output
+
+```c
+// BAD: Uninitialized stack buffer leaked to network
+struct response resp;
+resp.status = 200;
+// resp.padding not initialized — may leak stack data
+send(sock, &resp, sizeof(resp), 0);  // CWE-908
+
+// GOOD: Zero-initialize
+struct response resp = {0};
+resp.status = 200;
+send(sock, &resp, sizeof(resp), 0);
+```
+
+### Unsafe String Functions — Quick Reference
+
+| Unsafe | Safe Alternative | Notes |
+|--------|-----------------|-------|
+| `gets` | `fgets` | `gets` has no bounds check; removed in C11 |
+| `strcpy` | `strncpy` / `strlcpy` | Always limit to destination size |
+| `strcat` | `strncat` / `strlcat` | Track remaining space |
+| `sprintf` | `snprintf` | Always pass buffer size |
+| `scanf("%s", ...)` | `scanf("%63s", ...)` | Specify max field width |
+| `strlen` on untrusted input | `strnlen` | Prevent unbounded scan |
+
+---
+
+## 🔍 Analysis Workflow for Native Code
+
+1. **Parse code**: Identify memory allocations, pointer operations, system calls, string handling, and privilege operations.
+2. **Pattern match**: Scan for CWE Top 25 patterns listed above (buffer overflows, use-after-free, integer overflow, null deref, race conditions, format strings).
+3. **Severity**:
+   - **Critical**: RCE via buffer overflow, use-after-free, format string; command injection; privilege escalation
+   - **High**: Out-of-bounds read (info leak), integer overflow leading to heap corruption, race conditions on security-sensitive operations
+   - **Medium**: NULL pointer dereference (DoS), uninitialized memory read, missing input validation, hardcoded credentials
+   - **Low**: Incorrect permissions, minor TOCTOU, missing bounds on non-security paths
+   - **Info**: Deprecated function usage, style/hardening suggestions
+4. **Context**: Check for mitigations (ASLR, stack canaries, compiler flags `-fstack-protector`, AddressSanitizer, bounds-checking wrappers).
+5. **Remediation**: Suggest concrete C/C++ code changes with CWE references.
+
+---
+
+## 📊 Output Format
+
+Use the same finding structure as `security-review.context`, adding CWE ID:
+
+```
+## 🔴 **Critical: Buffer Overflow (CWE-787)**
+
+**Location**: `parser.c:142-145`
+**Language**: C
+**CWE**: CWE-787 (Out-of-bounds Write)
+**OWASP Category**: A03: Injection (when applicable)
+
+**Vulnerable Code**:
+```c
+char buf[64];
+strcpy(buf, user_input);
+```
+
+**Risk**: Stack-based buffer overflow allows arbitrary code execution
+
+**Remediation**:
+```c
+char buf[64];
+strncpy(buf, user_input, sizeof(buf) - 1);
+buf[sizeof(buf) - 1] = '\0';
+```
+
+**References**:
+- CWE-787: https://cwe.mitre.org/data/definitions/787.html
+- SANS Top 25: https://www.sans.org/top25-software-errors
+```
+
+---
+
+## 🔧 Compiler and Tool Hardening Checks
+
+When reviewing native projects, also check for missing hardening:
+
+| Check | What to look for |
+|-------|-----------------|
+| Stack protection | `-fstack-protector-strong` or `-fstack-protector-all` in build flags |
+| ASLR/PIE | `-fPIE -pie` for executables |
+| FORTIFY_SOURCE | `-D_FORTIFY_SOURCE=2` to catch buffer overflows at runtime |
+| RELRO | `-Wl,-z,relro,-z,now` for GOT protection |
+| Warnings | `-Wall -Wextra -Werror` to catch implicit issues |
+| Static analysis | Integration with `cppcheck`, `clang-tidy`, `scan-build`, or Coverity |
+| Sanitizers | AddressSanitizer, UBSan, ThreadSan available for CI |
+
+---
+
+## 📚 References
+
+- [CWE/SANS Top 25](https://www.sans.org/top25-software-errors)
+- [CWE List](https://cwe.mitre.org/top25/)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [SEI CERT C Coding Standard](https://wiki.sei.cmu.edu/confluence/display/c/)
+- [SEI CERT C++ Coding Standard](https://wiki.sei.cmu.edu/confluence/display/cplusplus/)
+- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)
+
+---
+
+**Note**: This context focuses on native/systems code vulnerabilities from the CWE/SANS Top 25. Many entries (injection, hardcoded credentials, path traversal) overlap with OWASP Top 10 but manifest differently in C/C++. Use with `security-review.context` for general OWASP framing.

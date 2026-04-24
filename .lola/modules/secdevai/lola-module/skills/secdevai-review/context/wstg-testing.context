@@ -1,0 +1,1807 @@
+# 🔒 OWASP Web Security Testing Guide (WSTG v4.2) Context
+
+**Purpose**: Comprehensive web application security testing patterns for AI-powered code review
+
+**Source**: OWASP Web Security Testing Guide v4.2  
+**Categories**: 12 testing domains (4.1-4.12) mapped to code-level detection patterns
+
+---
+
+## 4.1 Information Gathering
+
+### 4.1.1 Conduct Search Engine Discovery Reconnaissance for Information Leakage (WSTG-INFO-01)
+**Code Patterns to Detect**:
+- Exposed comments with sensitive information
+- Debug endpoints left in production
+- Verbose error messages revealing system information
+- robots.txt, sitemap.xml with sensitive paths
+
+**Python Examples**:
+```python
+# BAD - Sensitive info in comments
+# Database: postgres://admin:password123@db.internal.com/prod
+# API Key: sk-1234567890abcdef
+
+# BAD - Debug endpoint in production
+@app.route('/debug/users')
+def debug_users():
+    return jsonify(User.query.all())
+
+# GOOD - No sensitive information exposure
+# Use environment variables for configuration
+```
+
+### 4.1.2 Fingerprint Web Server (WSTG-INFO-02)
+**Code Patterns to Detect**:
+- Exposed server version headers
+- Verbose server banners
+
+**Python Examples**:
+```python
+# BAD - Exposed server version
+response.headers['Server'] = 'Apache/2.4.41 (Ubuntu)'
+
+# GOOD - Minimal server header
+response.headers['Server'] = 'WebServer'
+# Or remove entirely
+del response.headers['Server']
+```
+
+### 4.1.3 Review Webserver Metafiles for Information Leakage (WSTG-INFO-03)
+**Code Patterns to Detect**:
+- Overly detailed robots.txt revealing sensitive paths
+- Source map files in production
+- .git directory exposed
+
+### 4.1.4 Enumerate Applications on Webserver (WSTG-INFO-04)
+**Code Patterns to Detect**:
+- Multiple applications on same server without isolation
+- Shared session storage across applications
+- Virtual host configuration issues
+
+### 4.1.5 Review Webpage Content for Information Leakage (WSTG-INFO-05)
+**Code Patterns to Detect**:
+- Commented-out code with credentials
+- Source maps in production
+- Console.log with sensitive data
+
+**JavaScript Examples**:
+```javascript
+// BAD - Logging sensitive data
+console.log('User password:', user.password);
+console.log('API Token:', apiToken);
+
+// BAD - Commented credentials
+// const API_KEY = 'sk-prod-1234567890';
+
+// GOOD - No sensitive logging
+console.log('User authenticated:', user.id);
+```
+
+### 4.1.6 Identify Application Entry Points (WSTG-INFO-06)
+**Code Patterns to Detect**:
+- Unauthenticated API endpoints
+- Missing authorization checks on routes
+- Open GraphQL introspection
+
+### 4.1.7 Map Execution Paths Through Application (WSTG-INFO-07)
+**Code Patterns to Detect**:
+- Complex authentication flows with potential bypasses
+- Multiple code paths handling same functionality
+- Inconsistent validation across paths
+
+### 4.1.8 Fingerprint Web Application Framework (WSTG-INFO-08)
+**Code Patterns to Detect**:
+- Framework-specific headers exposed
+- Default error pages revealing framework
+- Framework version in HTTP responses
+
+**Python Examples**:
+```python
+# BAD - Framework version exposed
+# X-Powered-By: Flask/2.0.1
+# Server: Werkzeug/2.0.1 Python/3.9.0
+
+# GOOD - Remove framework indicators
+app.config['SERVER_NAME'] = None
+```
+
+### 4.1.9 Fingerprint Web Application (WSTG-INFO-09)
+**Code Patterns to Detect**:
+- Application-specific cookies revealing technology
+- Unique error messages identifying application
+- Default file structures exposed
+
+### 4.1.10 Map Application Architecture (WSTG-INFO-10)
+**Code Patterns to Detect**:
+- Exposed API documentation in production
+- Network architecture revealed in responses
+- Internal service names in headers/errors
+
+---
+
+## 4.2 Configuration and Deployment Management Testing
+
+### 4.2.1 Test Network Infrastructure Configuration (WSTG-CONF-01)
+**Code Patterns to Detect**:
+- Insecure CORS settings
+- Open ports/services unnecessarily exposed
+- Missing network segmentation
+
+**Python Examples**:
+```python
+# BAD - Overly permissive CORS
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# GOOD - Restricted CORS
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["https://trusted.example.com"],
+        "methods": ["GET", "POST"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
+```
+
+### 4.2.2 Test Application Platform Configuration (WSTG-CONF-02)
+**Code Patterns to Detect**:
+- DEBUG=True in production
+- Insecure default configurations
+- Missing security middleware
+
+**Python Examples**:
+```python
+# BAD - Debug enabled
+DEBUG = True
+ALLOWED_HOSTS = ['*']
+
+# GOOD - Production configuration
+DEBUG = False
+ALLOWED_HOSTS = ['example.com', 'www.example.com']
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+```
+
+### 4.2.3 Test File Extensions Handling for Sensitive Information (WSTG-CONF-03)
+**Code Patterns to Detect**:
+- Source code files accessible (.java, .py, .cs, .rb)
+- Backup files accessible (.bak, .old, .tmp, ~)
+- Configuration files exposed (.config, .ini, .env)
+
+**Python Examples**:
+```python
+# BAD - Serving all files without restriction
+@app.route('/files/<path:filename>')
+def serve_file(filename):
+    return send_file(filename)
+
+# GOOD - Whitelist allowed file types
+ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'gif'}
+
+@app.route('/files/<filename>')
+def serve_file(filename):
+    if not any(filename.endswith(f'.{ext}') for ext in ALLOWED_EXTENSIONS):
+        abort(403)
+    return send_file(os.path.join('public', filename))
+```
+
+### 4.2.4 Review Old Backup and Unreferenced Files for Sensitive Information (WSTG-CONF-04)
+**Code Patterns to Detect**:
+- Old versions of files in deployment
+- Backup files in web root
+- Temporary files not cleaned up
+
+### 4.2.5 Enumerate Infrastructure and Application Admin Interfaces (WSTG-CONF-05)
+**Code Patterns to Detect**:
+- Default admin paths (/admin, /administrator)
+- Weak admin credentials
+- Publicly accessible admin panels
+
+**Python Examples**:
+```python
+# BAD - Default admin path, no extra protection
+urlpatterns = [
+    path('admin/', admin.site.urls),
+]
+
+# GOOD - Custom admin path with IP restriction
+urlpatterns = [
+    path('secure-admin-panel/', admin.site.urls),
+]
+
+# Add IP whitelist middleware for admin
+```
+
+### 4.2.6 Test HTTP Methods (WSTG-CONF-06)
+**Code Patterns to Detect**:
+- Unnecessary HTTP methods enabled (TRACE, OPTIONS, PUT, DELETE)
+- Missing method restrictions
+
+**Python Examples**:
+```python
+# BAD - All methods allowed
+@app.route('/api/resource')
+def resource():
+    return data
+
+# GOOD - Explicit method restrictions
+@app.route('/api/resource', methods=['GET', 'POST'])
+def resource():
+    return data
+```
+
+### 4.2.7 Test HTTP Strict Transport Security (WSTG-CONF-07)
+**Code Patterns to Detect**:
+- Missing HSTS headers
+- Short max-age values
+- Missing includeSubDomains
+
+**Python Examples**:
+```python
+# BAD - No HSTS
+response = make_response(data)
+
+# GOOD - HSTS enabled
+response = make_response(data)
+response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload'
+```
+
+### 4.2.8 Test RIA Cross Domain Policy (WSTG-CONF-08)
+**Code Patterns to Detect**:
+- Overly permissive crossdomain.xml
+- Overly permissive clientaccesspolicy.xml
+- Flash/Silverlight cross-domain policies (legacy)
+
+### 4.2.9 Test File Permission (WSTG-CONF-09)
+**Code Patterns to Detect**:
+- World-readable configuration files
+- Writable application directories
+- Incorrect file ownership
+
+**Python Examples**:
+```python
+# BAD - World-readable sensitive file
+with open('/etc/app/config.ini', 'w') as f:
+    f.write(config_data)
+# Default permissions: 0644 (world-readable)
+
+# GOOD - Restricted permissions
+import os
+with open('/etc/app/config.ini', 'w') as f:
+    f.write(config_data)
+os.chmod('/etc/app/config.ini', 0o600)  # Owner read/write only
+```
+
+### 4.2.10 Test for Subdomain Takeover (WSTG-CONF-10)
+**Code Patterns to Detect**:
+- Dangling DNS records in configuration
+- Unused subdomains configured
+
+### 4.2.11 Test Cloud Storage (WSTG-CONF-11)
+**Code Patterns to Detect**:
+- Public S3 bucket configurations
+- Overly permissive cloud storage ACLs
+
+**Python Examples**:
+```python
+# BAD - Public S3 bucket
+s3_client.put_bucket_acl(
+    Bucket='mybucket',
+    ACL='public-read'
+)
+
+# GOOD - Private bucket with specific permissions
+s3_client.put_bucket_acl(
+    Bucket='mybucket',
+    ACL='private'
+)
+```
+
+---
+
+## 4.3 Identity Management Testing
+
+### 4.3.1 Test Role Definitions (WSTG-IDNT-01)
+**Code Patterns to Detect**:
+- Unclear role definitions
+- Overlapping role permissions
+- Missing role hierarchy
+
+**Python Examples**:
+```python
+# BAD - Unclear role permissions
+ROLES = {'user': True, 'admin': True}
+
+# GOOD - Clear role definitions with permissions
+ROLES = {
+    'user': {
+        'can_read': True,
+        'can_write_own': True,
+        'can_delete_own': True
+    },
+    'moderator': {
+        'can_read': True,
+        'can_write_any': True,
+        'can_delete_any': False
+    },
+    'admin': {
+        'can_read': True,
+        'can_write_any': True,
+        'can_delete_any': True,
+        'can_manage_users': True
+    }
+}
+```
+
+### 4.3.2 Test User Registration Process (WSTG-IDNT-02)
+**Code Patterns to Detect**:
+- Missing email verification
+- Weak username policies
+- Automatic account activation
+
+**Python Examples**:
+```python
+# BAD - No email verification
+def register(username, email, password):
+    user = User(username=username, email=email, is_active=True)
+    user.save()
+
+# GOOD - Email verification required
+def register(username, email, password):
+    user = User(username=username, email=email, is_active=False)
+    user.verification_token = generate_token()
+    user.save()
+    send_verification_email(user)
+```
+
+### 4.3.3 Test Account Provisioning Process (WSTG-IDNT-03)
+**Code Patterns to Detect**:
+- Automatic privilege assignment without approval
+- Missing account approval workflow
+- No account deprovisioning process
+
+### 4.3.4 Testing for Account Enumeration and Guessable User Account (WSTG-IDNT-04)
+**Code Patterns to Detect**:
+- Different error messages for invalid user vs invalid password
+- Username existence check endpoints
+
+**Python Examples**:
+```python
+# BAD - Reveals if user exists
+if not User.objects.filter(username=username).exists():
+    return "Username does not exist"
+if not user.check_password(password):
+    return "Invalid password"
+
+# GOOD - Generic error message
+user = User.objects.filter(username=username).first()
+if not user or not user.check_password(password):
+    return "Invalid username or password"
+```
+
+### 4.3.5 Testing for Weak or Unenforced Username Policy (WSTG-IDNT-05)
+**Code Patterns to Detect**:
+- No username length requirements
+- Special characters allowed in usernames
+- Usernames that could be confused with system accounts
+
+**Python Examples**:
+```python
+# BAD - No username validation
+username = request.form['username']
+user = User(username=username)
+
+# GOOD - Username policy enforcement
+import re
+
+def validate_username(username):
+    if len(username) < 3 or len(username) > 20:
+        raise ValidationError("Username must be 3-20 characters")
+    if not re.match(r'^[a-zA-Z0-9_]+$', username):
+        raise ValidationError("Username can only contain letters, numbers, and underscores")
+    if username.lower() in ['admin', 'root', 'system', 'administrator']:
+        raise ValidationError("Username not allowed")
+    return username
+```
+
+---
+
+## 4.4 Authentication Testing
+
+### 4.4.1 Testing for Credentials Transported over an Encrypted Channel (WSTG-ATHN-01)
+**Code Patterns to Detect**:
+- HTTP (not HTTPS) for authentication
+- Missing SSL/TLS enforcement
+- Credentials in URL parameters
+
+**Python Examples**:
+```python
+# BAD - Credentials in URL
+@app.route('/login')
+def login():
+    username = request.args.get('username')
+    password = request.args.get('password')
+
+# GOOD - Credentials in POST body over HTTPS
+@app.route('/login', methods=['POST'])
+@require_https
+def login():
+    username = request.form.get('username')
+    password = request.form.get('password')
+```
+
+### 4.4.2 Testing for Default Credentials (WSTG-ATHN-02)
+**Code Patterns to Detect**:
+- Hardcoded default passwords
+- Admin accounts with weak credentials
+
+**Python Examples**:
+```python
+# BAD - Default credentials
+DEFAULT_ADMIN_PASSWORD = "admin123"
+
+# GOOD - Force password change on first login
+if user.is_first_login:
+    redirect('/change-password')
+```
+
+### 4.4.3 Testing for Weak Lock Out Mechanism (WSTG-ATHN-03)
+**Code Patterns to Detect**:
+- Missing account lockout
+- No rate limiting on login attempts
+- Predictable lockout bypass
+
+**Python Examples**:
+```python
+# BAD - No lockout mechanism
+def login(username, password):
+    user = authenticate(username, password)
+    return user
+
+# GOOD - Account lockout after failed attempts
+from django.core.cache import cache
+
+def login(username, password):
+    lockout_key = f'lockout_{username}'
+    attempts_key = f'attempts_{username}'
+    
+    if cache.get(lockout_key):
+        raise AccountLocked("Too many failed attempts")
+    
+    user = authenticate(username, password)
+    if not user:
+        attempts = cache.get(attempts_key, 0) + 1
+        cache.set(attempts_key, attempts, 3600)
+        if attempts >= 5:
+            cache.set(lockout_key, True, 1800)  # 30 min lockout
+        raise AuthenticationFailed()
+    
+    cache.delete(attempts_key)
+    return user
+```
+
+### 4.4.4 Testing for Bypassing Authentication Schema (WSTG-ATHN-04)
+**Code Patterns to Detect**:
+- Authentication logic flaws
+- SQL injection in authentication
+- Missing authentication checks
+
+### 4.4.5 Testing for Vulnerable Remember Password (WSTG-ATHN-05)
+**Code Patterns to Detect**:
+- Remember me functionality using weak tokens
+- Remember me token without expiration
+- Password stored in cookie
+
+**Python Examples**:
+```python
+# BAD - Password in cookie
+response.set_cookie('remember', f'{username}:{password}')
+
+# GOOD - Secure remember me token
+import secrets
+remember_token = secrets.token_urlsafe(32)
+user.remember_token = remember_token
+user.remember_token_expires = timezone.now() + timedelta(days=30)
+user.save()
+response.set_cookie('remember', remember_token, max_age=30*24*3600, secure=True, httponly=True)
+```
+
+### 4.4.6 Testing for Browser Cache Weaknesses (WSTG-ATHN-06)
+**Code Patterns to Detect**:
+- Missing cache-control headers on sensitive pages
+- Autocomplete enabled on password fields
+
+**Python Examples**:
+```python
+# BAD - Sensitive data cached
+@app.route('/profile')
+def profile():
+    return render_template('profile.html', user=current_user)
+
+# GOOD - No-cache headers for sensitive data
+@app.route('/profile')
+def profile():
+    response = make_response(render_template('profile.html', user=current_user))
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+```
+
+### 4.4.7 Testing for Weak Password Policy (WSTG-ATHN-07)
+**Code Patterns to Detect**:
+- Short minimum password length
+- No complexity requirements
+- Common password acceptance
+
+**Python Examples**:
+```python
+# BAD - Weak password policy
+if len(password) >= 6:
+    return True
+
+# GOOD - Strong password policy
+import re
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+
+def validate_strong_password(password):
+    if len(password) < 12:
+        raise ValidationError("Password must be at least 12 characters")
+    if not re.search(r'[A-Z]', password):
+        raise ValidationError("Password must contain uppercase letter")
+    if not re.search(r'[a-z]', password):
+        raise ValidationError("Password must contain lowercase letter")
+    if not re.search(r'[0-9]', password):
+        raise ValidationError("Password must contain number")
+    if not re.search(r'[^A-Za-z0-9]', password):
+        raise ValidationError("Password must contain special character")
+    
+    # Check against common passwords
+    validate_password(password)
+```
+
+### 4.4.8 Testing for Weak Security Question/Answer (WSTG-ATHN-08)
+**Code Patterns to Detect**:
+- Easily guessable security questions
+- Security answers stored in plaintext
+- No limit on security question attempts
+
+**Python Examples**:
+```python
+# BAD - Plaintext security answers
+user.security_answer = request.form['answer']
+
+# GOOD - Hashed security answers with rate limiting
+from werkzeug.security import generate_password_hash
+user.security_answer_hash = generate_password_hash(request.form['answer'].lower().strip())
+```
+
+### 4.4.9 Testing for Weak Password Change or Reset Functionalities (WSTG-ATHN-09)
+**Code Patterns to Detect**:
+- No current password verification for change
+- Predictable reset tokens
+- Reset links without expiration
+
+**Python Examples**:
+```python
+# BAD - No current password check
+def change_password(user, new_password):
+    user.set_password(new_password)
+    user.save()
+
+# GOOD - Require current password
+def change_password(user, current_password, new_password):
+    if not user.check_password(current_password):
+        raise ValidationError("Current password incorrect")
+    user.set_password(new_password)
+    user.save()
+
+# BAD - Predictable reset token
+reset_token = str(user.id) + str(int(time.time()))
+
+# GOOD - Cryptographically secure token
+import secrets
+reset_token = secrets.token_urlsafe(32)
+user.reset_token = reset_token
+user.reset_token_expires = timezone.now() + timedelta(hours=1)
+user.save()
+```
+
+### 4.4.10 Testing for Weaker Authentication in Alternative Channel (WSTG-ATHN-10)
+**Code Patterns to Detect**:
+- Mobile app with weaker authentication than web
+- API with less stringent authentication
+- Different authentication requirements across channels
+
+---
+
+## 4.5 Authorization Testing
+
+### 4.5.1 Testing Directory Traversal / File Include (WSTG-ATHZ-01)
+**Code Patterns to Detect**:
+- User-controlled file paths
+- Missing path validation
+- Direct file access without authorization
+
+**Python Examples**:
+```python
+# BAD - Path traversal vulnerability
+@app.route('/download')
+def download():
+    filename = request.args.get('file')
+    return send_file(f'/uploads/{filename}')
+
+# GOOD - Validated file access
+from pathlib import Path
+
+@app.route('/download')
+def download():
+    filename = request.args.get('file')
+    
+    # Validate filename
+    if not filename or '..' in filename or '/' in filename:
+        abort(400)
+    
+    base_path = Path('/uploads').resolve()
+    file_path = (base_path / filename).resolve()
+    
+    # Ensure file is within allowed directory
+    if not str(file_path).startswith(str(base_path)):
+        abort(403)
+    
+    if not file_path.exists():
+        abort(404)
+    
+    return send_file(file_path)
+```
+
+### 4.5.2 Testing for Bypassing Authorization Schema (WSTG-ATHZ-02)
+**Code Patterns to Detect**:
+- Missing authorization checks
+- Client-side only authorization
+- Inconsistent permission checks
+
+**Python Examples**:
+```python
+# BAD - No authorization check
+@app.route('/api/user/<int:user_id>/delete', methods=['DELETE'])
+def delete_user(user_id):
+    User.query.get(user_id).delete()
+    return {'success': True}
+
+# GOOD - Authorization check
+@app.route('/api/user/<int:user_id>/delete', methods=['DELETE'])
+@login_required
+def delete_user(user_id):
+    if not current_user.is_admin:
+        abort(403, "Admin access required")
+    
+    user = User.query.get_or_404(user_id)
+    user.delete()
+    return {'success': True}
+```
+
+### 4.5.3 Testing for Privilege Escalation (WSTG-ATHZ-03)
+**Code Patterns to Detect**:
+- User-controllable role assignment
+- Missing privilege checks
+- Horizontal privilege escalation (accessing other users' data)
+
+**Python Examples**:
+```python
+# BAD - User can set their own role
+@app.route('/api/user/update', methods=['POST'])
+def update_user():
+    current_user.role = request.json.get('role')  # User controls role!
+    current_user.save()
+
+# GOOD - Role changes restricted to admins
+@app.route('/api/user/<int:user_id>/update-role', methods=['POST'])
+@admin_required
+def update_user_role(user_id):
+    user = User.query.get_or_404(user_id)
+    new_role = request.json.get('role')
+    
+    # Validate role
+    if new_role not in ['user', 'moderator', 'admin']:
+        abort(400)
+    
+    user.role = new_role
+    user.save()
+    audit_log('role_change', user_id, new_role)
+```
+
+### 4.5.4 Testing for Insecure Direct Object References (WSTG-ATHZ-04)
+**Code Patterns to Detect**:
+- Sequential/predictable IDs without authorization
+- User ID in URL without ownership check
+- Missing object-level authorization
+
+**Python Examples**:
+```python
+# BAD - IDOR vulnerability
+@app.route('/api/invoice/<int:invoice_id>')
+def get_invoice(invoice_id):
+    invoice = Invoice.query.get_or_404(invoice_id)
+    return jsonify(invoice)
+
+# GOOD - Check ownership
+@app.route('/api/invoice/<int:invoice_id>')
+@login_required
+def get_invoice(invoice_id):
+    invoice = Invoice.query.get_or_404(invoice_id)
+    
+    # Verify ownership
+    if invoice.user_id != current_user.id and not current_user.is_admin:
+        abort(403, "Not authorized to access this invoice")
+    
+    return jsonify(invoice)
+```
+
+---
+
+## 4.6 Session Management Testing
+
+### 4.6.1 Testing for Session Management Schema (WSTG-SESS-01)
+**Code Patterns to Detect**:
+- Predictable session IDs
+- Session IDs in URLs
+- Weak session generation
+
+### 4.6.2 Testing for Cookies Attributes (WSTG-SESS-02)
+**Code Patterns to Detect**:
+- Missing Secure flag on cookies
+- Missing HttpOnly flag
+- Missing SameSite attribute
+- Weak session ID generation
+
+**Python Examples**:
+```python
+# BAD - Insecure cookie settings
+SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_HTTPONLY = False
+SESSION_COOKIE_SAMESITE = None
+
+# GOOD - Secure cookie settings
+SESSION_COOKIE_SECURE = True  # HTTPS only
+SESSION_COOKIE_HTTPONLY = True  # No JavaScript access
+SESSION_COOKIE_SAMESITE = 'Strict'  # CSRF protection
+SESSION_COOKIE_AGE = 3600  # 1 hour
+```
+
+### 4.6.3 Testing for Session Fixation (WSTG-SESS-03)
+**Code Patterns to Detect**:
+- Session ID not regenerated after login
+- Accepting session IDs from URL parameters
+
+**Python Examples**:
+```python
+# BAD - No session regeneration
+def login(username, password):
+    user = authenticate(username, password)
+    session['user_id'] = user.id
+
+# GOOD - Regenerate session on login
+def login(username, password):
+    user = authenticate(username, password)
+    session.clear()
+    session.regenerate()  # Generate new session ID
+    session['user_id'] = user.id
+```
+
+### 4.6.4 Testing for Exposed Session Variables (WSTG-SESS-04)
+**Code Patterns to Detect**:
+- Session data in URLs
+- Session IDs in logs
+- Session tokens in GET parameters
+
+### 4.6.5 Testing for Cross Site Request Forgery (WSTG-SESS-05)
+**Code Patterns to Detect**:
+- Missing CSRF tokens on state-changing operations
+- GET requests for state changes
+- Missing CSRF validation
+
+**Python Examples**:
+```python
+# BAD - No CSRF protection
+@app.route('/transfer', methods=['POST'])
+def transfer():
+    amount = request.form['amount']
+    recipient = request.form['recipient']
+    process_transfer(current_user, recipient, amount)
+
+# GOOD - CSRF protection
+from flask_wtf.csrf import CSRFProtect
+
+csrf = CSRFProtect(app)
+
+@app.route('/transfer', methods=['POST'])
+def transfer():
+    # CSRF token automatically validated by Flask-WTF
+    amount = request.form['amount']
+    recipient = request.form['recipient']
+    process_transfer(current_user, recipient, amount)
+```
+
+### 4.6.6 Testing for Logout Functionality (WSTG-SESS-06)
+**Code Patterns to Detect**:
+- Session not invalidated on logout
+- Missing logout on all devices
+- Cached sensitive data after logout
+
+**Python Examples**:
+```python
+# BAD - Incomplete logout
+def logout():
+    session.pop('user_id', None)
+    redirect('/')
+
+# GOOD - Complete logout
+def logout():
+    # Invalidate session
+    session_id = session.get('session_id')
+    if session_id:
+        Session.query.filter_by(id=session_id).delete()
+    
+    # Clear session
+    session.clear()
+    
+    # Clear cookies
+    response = make_response(redirect('/'))
+    response.set_cookie('session', '', expires=0)
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    
+    return response
+```
+
+### 4.6.7 Testing Session Timeout (WSTG-SESS-07)
+**Code Patterns to Detect**:
+- No session timeout
+- Excessive timeout duration
+- No idle timeout
+
+**Python Examples**:
+```python
+# BAD - No timeout
+SESSION_COOKIE_AGE = None  # Never expires
+
+# GOOD - Reasonable timeout
+SESSION_COOKIE_AGE = 1800  # 30 minutes
+SESSION_SAVE_EVERY_REQUEST = True  # Refresh on activity
+
+# Implement idle timeout
+from datetime import datetime, timedelta
+
+def check_session_timeout():
+    last_activity = session.get('last_activity')
+    if last_activity:
+        last_activity = datetime.fromisoformat(last_activity)
+        if datetime.now() - last_activity > timedelta(minutes=30):
+            session.clear()
+            abort(401, "Session expired")
+    session['last_activity'] = datetime.now().isoformat()
+```
+
+### 4.6.8 Testing for Session Puzzling (WSTG-SESS-08)
+**Code Patterns to Detect**:
+- Session variables reused across different contexts
+- Session state manipulation
+- Session variable overwrite vulnerabilities
+
+### 4.6.9 Testing for Session Hijacking (WSTG-SESS-09)
+**Code Patterns to Detect**:
+- Session IDs transmitted insecurely
+- No session binding to IP/User-Agent
+- Predictable session tokens
+
+---
+
+## 4.7 Input Validation Testing
+
+### 4.7.1 Testing for Reflected Cross Site Scripting (WSTG-INPV-01)
+**Code Patterns to Detect**:
+- Unescaped user input in HTML
+- URL parameters reflected in response
+- Direct output of request data
+
+**Python Examples**:
+```python
+# BAD - XSS vulnerability
+@app.route('/search')
+def search():
+    query = request.args.get('q')
+    return f'<h1>Results for {query}</h1>'
+
+# GOOD - Escaped output
+from markupsafe import escape
+
+@app.route('/search')
+def search():
+    query = request.args.get('q')
+    return f'<h1>Results for {escape(query)}</h1>'
+    # Or use template engine (Jinja2 auto-escapes)
+```
+
+### 4.7.2 Testing for Stored Cross Site Scripting (WSTG-INPV-02)
+**Code Patterns to Detect**:
+- Unescaped user input in HTML
+- innerHTML assignments
+- Direct DOM manipulation with user data
+
+**JavaScript Examples**:
+```javascript
+// BAD - XSS via innerHTML
+const userInput = getUrlParameter('name');
+document.getElementById('greeting').innerHTML = 'Hello ' + userInput;
+
+// GOOD - Use textContent
+const userInput = getUrlParameter('name');
+document.getElementById('greeting').textContent = 'Hello ' + userInput;
+
+// Or use sanitization library
+import DOMPurify from 'dompurify';
+element.innerHTML = DOMPurify.sanitize(userInput);
+```
+
+### 4.7.3 Testing for HTTP Verb Tampering (WSTG-INPV-03)
+**Code Patterns to Detect**:
+- Different behavior for different HTTP methods
+- Missing method validation
+- HEAD/OPTIONS bypassing security controls
+
+### 4.7.4 Testing for HTTP Parameter Pollution (WSTG-INPV-04)
+**Code Patterns to Detect**:
+- Multiple parameters with same name
+- Parameter precedence issues
+- Backend inconsistency handling duplicate parameters
+
+### 4.7.5 Testing for SQL Injection (WSTG-INPV-05)
+**Code Patterns to Detect**:
+- String concatenation in SQL queries
+- f-strings or format() with user input
+- execute() with unparameterized queries
+
+**Python Examples**:
+```python
+# BAD - SQL injection
+def get_user(username):
+    query = f"SELECT * FROM users WHERE username = '{username}'"
+    cursor.execute(query)
+
+# GOOD - Parameterized query
+def get_user(username):
+    query = "SELECT * FROM users WHERE username = %s"
+    cursor.execute(query, (username,))
+
+# GOOD - ORM usage
+def get_user(username):
+    return User.query.filter_by(username=username).first()
+```
+
+### 4.7.6 Testing for LDAP Injection (WSTG-INPV-06)
+**Code Patterns to Detect**:
+- LDAP queries with user input
+- Special LDAP characters not escaped
+
+### 4.7.7 Testing for XML Injection (WSTG-INPV-07)
+**Code Patterns to Detect**:
+- XML parsing of user input
+- XXE (XML External Entity) vulnerabilities
+- XML bomb attacks
+
+**Python Examples**:
+```python
+# BAD - XXE vulnerability
+import xml.etree.ElementTree as ET
+tree = ET.parse(user_uploaded_file)
+
+# GOOD - Disable external entities
+import defusedxml.ElementTree as ET
+tree = ET.parse(user_uploaded_file)
+```
+
+### 4.7.8 Testing for SSI Injection (WSTG-INPV-08)
+**Code Patterns to Detect**:
+- Server-Side Includes enabled
+- User input in SSI directives
+
+### 4.7.9 Testing for XPath Injection (WSTG-INPV-09)
+**Code Patterns to Detect**:
+- XPath queries with user input
+- XML database queries
+
+### 4.7.10 Testing for IMAP/SMTP Injection (WSTG-INPV-10)
+**Code Patterns to Detect**:
+- Email headers from user input
+- IMAP commands with user data
+
+### 4.7.11 Testing for Code Injection (WSTG-INPV-11)
+**Code Patterns to Detect**:
+- eval() with user input
+- exec() with user input
+- pickle.load() from untrusted source
+- Dynamic imports from user input
+
+**Python Examples**:
+```python
+# BAD - Code injection
+user_code = request.form['code']
+result = eval(user_code)
+
+# BAD - Unsafe deserialization
+import pickle
+data = pickle.load(open(user_file, 'rb'))
+
+# GOOD - Safe alternatives
+import ast
+import json
+
+# Use ast.literal_eval for safe evaluation
+result = ast.literal_eval(user_input)
+
+# Use JSON instead of pickle
+data = json.loads(user_data)
+```
+
+### 4.7.12 Testing for Command Injection (WSTG-INPV-12)
+**Code Patterns to Detect**:
+- subprocess with shell=True
+- os.system() with user input
+- String concatenation in commands
+
+**Python Examples**:
+```python
+# BAD - Command injection
+import subprocess
+filename = request.args.get('file')
+subprocess.call(f'cat {filename}', shell=True)
+
+# GOOD - Safe command execution
+import subprocess
+filename = request.args.get('file')
+
+# Validate filename first
+if not filename.isalnum():
+    abort(400)
+
+# Use array form, no shell
+subprocess.call(['cat', filename])
+```
+
+### 4.7.13 Testing for Format String Injection (WSTG-INPV-13)
+**Code Patterns to Detect**:
+- User input in format strings
+- String formatting vulnerabilities
+
+### 4.7.14 Testing for Incubated Vulnerability (WSTG-INPV-14)
+**Code Patterns to Detect**:
+- Stored input that will be processed later
+- Delayed execution vulnerabilities
+
+### 4.7.15 Testing for HTTP Splitting/Smuggling (WSTG-INPV-15)
+**Code Patterns to Detect**:
+- Custom HTTP header parsing
+- Content-Length vs Transfer-Encoding conflicts
+
+### 4.7.16 Testing for HTTP Incoming Requests (WSTG-INPV-16)
+**Code Patterns to Detect**:
+- Missing request size limits
+- No request rate limiting
+
+### 4.7.17 Testing for Host Header Injection (WSTG-INPV-17)
+**Code Patterns to Detect**:
+- Host header used without validation
+- Password reset links using untrusted host header
+
+**Python Examples**:
+```python
+# BAD - Using host header without validation
+reset_link = f"https://{request.headers.get('Host')}/reset/{token}"
+
+# GOOD - Use configured domain
+from django.conf import settings
+reset_link = f"https://{settings.ALLOWED_HOSTS[0]}/reset/{token}"
+```
+
+### 4.7.18 Testing for Server-Side Template Injection (WSTG-INPV-18)
+**Code Patterns to Detect**:
+- User input in template rendering
+- Dynamic template generation
+
+**Python Examples**:
+```python
+# BAD - Template injection
+from jinja2 import Template
+template = Template(user_input)
+output = template.render()
+
+# GOOD - Use predefined templates
+from flask import render_template_string
+output = render_template_string('{{ name }}', name=user_input)
+```
+
+### 4.7.19 Testing for Server-Side Request Forgery (WSTG-INPV-19)
+**Code Patterns to Detect**:
+- User-controlled URLs in requests
+- Missing URL validation
+- Internal network access without restrictions
+
+**Python Examples**:
+```python
+# BAD - SSRF vulnerability
+import requests
+
+@app.route('/fetch')
+def fetch_url():
+    url = request.args.get('url')
+    response = requests.get(url)
+    return response.text
+
+# GOOD - URL validation and restrictions
+import requests
+from urllib.parse import urlparse
+
+ALLOWED_HOSTS = ['api.example.com', 'cdn.example.com']
+BLOCKED_IPS = ['127.0.0.1', '0.0.0.0', '169.254.169.254']  # Metadata service
+
+@app.route('/fetch')
+def fetch_url():
+    url = request.args.get('url')
+    
+    # Parse and validate URL
+    parsed = urlparse(url)
+    
+    # Check protocol
+    if parsed.scheme not in ['http', 'https']:
+        abort(400, "Invalid protocol")
+    
+    # Check hostname whitelist
+    if parsed.hostname not in ALLOWED_HOSTS:
+        abort(403, "Host not allowed")
+    
+    # Check for blocked IPs
+    import socket
+    try:
+        ip = socket.gethostbyname(parsed.hostname)
+        if ip in BLOCKED_IPS or ip.startswith('10.') or ip.startswith('192.168.'):
+            abort(403, "Cannot access internal resources")
+    except socket.gaierror:
+        abort(400, "Invalid hostname")
+    
+    # Make request with timeout
+    response = requests.get(url, timeout=5, allow_redirects=False)
+    return response.text
+```
+
+---
+
+## 4.8 Testing for Error Handling
+
+### 4.8.1 Testing for Improper Error Handling (WSTG-ERRH-01)
+**Code Patterns to Detect**:
+- Verbose error messages in production
+- Stack traces exposed to users
+- Database errors shown to users
+
+**Python Examples**:
+```python
+# BAD - Verbose error messages
+@app.errorhandler(Exception)
+def handle_error(error):
+    return str(error), 500
+
+# GOOD - Generic error messages
+@app.errorhandler(Exception)
+def handle_error(error):
+    # Log full error for debugging
+    logger.error(f"Error: {error}", exc_info=True)
+    
+    # Return generic message to user
+    if app.config['DEBUG']:
+        return str(error), 500
+    return "An error occurred. Please try again later.", 500
+```
+
+### 4.8.2 Testing for Stack Traces (WSTG-ERRH-02)
+**Code Patterns to Detect**:
+- DEBUG=True in production
+- Unhandled exceptions
+- Traceback in responses
+
+**Python Examples**:
+```python
+# BAD - Debug mode in production
+DEBUG = True
+PROPAGATE_EXCEPTIONS = True
+
+# GOOD - Production error handling
+DEBUG = False
+PROPAGATE_EXCEPTIONS = False
+
+@app.errorhandler(500)
+def internal_error(error):
+    logger.exception("Internal server error")
+    return render_template('errors/500.html'), 500
+```
+
+---
+
+## 4.9 Testing for Weak Cryptography
+
+### 4.9.1 Testing for Weak Transport Layer Security (WSTG-CRYP-01)
+**Code Patterns to Detect**:
+- SSL verification disabled
+- Weak TLS versions (TLS 1.0, 1.1)
+- Weak cipher suites
+
+**Python Examples**:
+```python
+# BAD - SSL verification disabled
+import requests
+response = requests.get('https://api.example.com', verify=False)
+
+# BAD - Weak TLS version
+import ssl
+context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+
+# GOOD - Secure TLS configuration
+import requests
+import ssl
+
+response = requests.get('https://api.example.com', verify=True)
+
+# Force TLS 1.2+
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+context.minimum_version = ssl.TLSVersion.TLSv1_2
+```
+
+### 4.9.2 Testing for Padding Oracle (WSTG-CRYP-02)
+**Code Patterns to Detect**:
+- CBC mode without proper MAC
+- Padding error messages revealing information
+- Timing differences in padding validation
+
+### 4.9.3 Testing for Sensitive Information Sent via Unencrypted Channels (WSTG-CRYP-03)
+**Code Patterns to Detect**:
+- HTTP for authentication
+- Unencrypted database connections
+- Plaintext sensitive data in logs
+
+### 4.9.4 Testing for Weak Encryption (WSTG-CRYP-04)
+**Code Patterns to Detect**:
+- MD5, SHA1 for passwords
+- Weak random number generation
+- ECB mode encryption
+- Hardcoded encryption keys
+
+**Python Examples**:
+```python
+# BAD - Weak hashing
+import hashlib
+password_hash = hashlib.md5(password.encode()).hexdigest()
+
+# BAD - Weak random
+import random
+token = str(random.randint(1000, 9999))
+
+# GOOD - Strong password hashing
+from werkzeug.security import generate_password_hash, check_password_hash
+password_hash = generate_password_hash(password, method='pbkdf2:sha256', salt_length=16)
+
+# GOOD - Cryptographically secure random
+import secrets
+token = secrets.token_urlsafe(32)
+
+# BAD - Weak encryption
+from Crypto.Cipher import AES
+cipher = AES.new(key, AES.MODE_ECB)
+
+# GOOD - Strong encryption
+from cryptography.fernet import Fernet
+key = Fernet.generate_key()
+cipher = Fernet(key)
+encrypted = cipher.encrypt(data)
+```
+
+---
+
+## 4.10 Business Logic Testing
+
+### 4.10.1 Test Business Logic Data Validation (WSTG-BUSL-01)
+**Code Patterns to Detect**:
+- Missing input validation
+- No boundary checks
+- Negative values accepted where inappropriate
+
+**Python Examples**:
+```python
+# BAD - No validation
+@app.route('/transfer', methods=['POST'])
+def transfer():
+    amount = float(request.form['amount'])
+    process_transfer(current_user, recipient, amount)
+
+# GOOD - Comprehensive validation
+@app.route('/transfer', methods=['POST'])
+def transfer():
+    try:
+        amount = Decimal(request.form['amount'])
+    except (ValueError, InvalidOperation):
+        abort(400, "Invalid amount")
+    
+    # Validate boundaries
+    if amount <= 0:
+        abort(400, "Amount must be positive")
+    if amount > current_user.balance:
+        abort(400, "Insufficient funds")
+    if amount > Decimal('10000'):
+        abort(400, "Amount exceeds transfer limit")
+    
+    process_transfer(current_user, recipient, amount)
+```
+
+### 4.10.2 Test Ability to Forge Requests (WSTG-BUSL-02)
+**Code Patterns to Detect**:
+- Client-side only validation
+- Trusting client-provided data
+- Missing server-side checks
+
+### 4.10.3 Test Integrity Checks (WSTG-BUSL-03)
+**Code Patterns to Detect**:
+- Missing transaction integrity checks
+- No database constraints
+- Race conditions
+
+**Python Examples**:
+```python
+# BAD - Race condition
+def purchase(user, item):
+    if user.balance >= item.price:
+        user.balance -= item.price
+        user.save()
+        item.sold = True
+        item.save()
+
+# GOOD - Atomic transaction
+from django.db import transaction
+
+@transaction.atomic
+def purchase(user, item):
+    # Lock rows for update
+    user = User.objects.select_for_update().get(id=user.id)
+    item = Item.objects.select_for_update().get(id=item.id)
+    
+    if item.sold:
+        raise ValueError("Item already sold")
+    if user.balance < item.price:
+        raise ValueError("Insufficient funds")
+    
+    user.balance -= item.price
+    user.save()
+    item.sold = True
+    item.save()
+```
+
+### 4.10.4 Test for Process Timing (WSTG-BUSL-04)
+**Code Patterns to Detect**:
+- Timing-based vulnerabilities
+- No rate limiting on critical operations
+
+### 4.10.5 Test Number of Times a Function Can Be Used Limits (WSTG-BUSL-05)
+**Code Patterns to Detect**:
+- Unlimited API calls
+- No throttling on expensive operations
+- Missing usage quotas
+
+**Python Examples**:
+```python
+# BAD - No rate limiting
+@app.route('/api/data')
+def get_data():
+    return expensive_operation()
+
+# GOOD - Rate limiting
+from flask_limiter import Limiter
+
+limiter = Limiter(app, key_func=lambda: current_user.id)
+
+@app.route('/api/data')
+@limiter.limit("100/hour")
+def get_data():
+    return expensive_operation()
+```
+
+### 4.10.6 Testing for the Circumvention of Work Flows (WSTG-BUSL-06)
+**Code Patterns to Detect**:
+- Skipping steps in multi-step processes
+- Out-of-order workflow execution
+- Missing workflow state validation
+
+### 4.10.7 Test Defenses Against Application Misuse (WSTG-BUSL-07)
+**Code Patterns to Detect**:
+- No anti-automation controls
+- Missing bot detection
+- Lack of abuse prevention
+
+### 4.10.8 Test Upload of Unexpected File Types (WSTG-BUSL-08)
+**Code Patterns to Detect**:
+- Unrestricted file upload
+- No file type validation
+- Executable files allowed
+- No file size limits
+
+**Python Examples**:
+```python
+# BAD - Unrestricted file upload
+@app.route('/upload', methods=['POST'])
+def upload():
+    file = request.files['file']
+    file.save(f'/uploads/{file.filename}')
+
+# GOOD - Restricted file upload
+import os
+from werkzeug.utils import secure_filename
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf'}
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route('/upload', methods=['POST'])
+def upload():
+    if 'file' not in request.files:
+        abort(400, "No file provided")
+    
+    file = request.files['file']
+    
+    # Check filename
+    if not file.filename or not allowed_file(file.filename):
+        abort(400, "Invalid file type")
+    
+    # Check file size
+    file.seek(0, os.SEEK_END)
+    size = file.tell()
+    file.seek(0)
+    if size > MAX_FILE_SIZE:
+        abort(400, "File too large")
+    
+    # Secure filename
+    filename = secure_filename(file.filename)
+    
+    # Add random prefix to prevent overwrites
+    import uuid
+    filename = f"{uuid.uuid4()}_{filename}"
+    
+    # Save outside webroot
+    filepath = os.path.join('/secure/uploads', filename)
+    file.save(filepath)
+    
+    # Verify file content matches extension
+    import magic
+    mime = magic.from_file(filepath, mime=True)
+    if mime not in ['image/png', 'image/jpeg', 'image/gif', 'application/pdf']:
+        os.remove(filepath)
+        abort(400, "Invalid file content")
+    
+    return {'filename': filename}
+```
+
+### 4.10.9 Test Upload of Malicious Files (WSTG-BUSL-09)
+**Code Patterns to Detect**:
+- No virus scanning on uploads
+- Executable files allowed
+- File content not validated
+
+---
+
+## 4.11 Client-Side Testing
+
+### 4.11.1 Testing for DOM-Based Cross Site Scripting (WSTG-CLNT-01)
+**Code Patterns to Detect**:
+- Direct DOM manipulation with user input
+- location.href assignments
+- document.write with user data
+
+**JavaScript Examples**:
+```javascript
+// BAD - DOM XSS
+const name = new URLSearchParams(window.location.search).get('name');
+document.getElementById('output').innerHTML = name;
+
+// BAD - DOM XSS via location
+const redirect = getParameter('url');
+window.location = redirect;  // Can be javascript:alert(1)
+
+// GOOD - Safe DOM manipulation
+const name = new URLSearchParams(window.location.search).get('name');
+document.getElementById('output').textContent = name;
+
+// GOOD - URL validation
+const redirect = getParameter('url');
+try {
+  const url = new URL(redirect, window.location.origin);
+  if (url.origin === window.location.origin) {
+    window.location = url.href;
+  }
+} catch {
+  // Invalid URL
+}
+```
+
+### 4.11.2 Testing for JavaScript Execution (WSTG-CLNT-02)
+**Code Patterns to Detect**:
+- setTimeout/setInterval with user input
+- Function constructor with user input
+- eval-like functions
+
+### 4.11.3 Testing for HTML Injection (WSTG-CLNT-03)
+**Code Patterns to Detect**:
+- HTML injection without XSS
+- Content injection vulnerabilities
+
+### 4.11.4 Testing for Client-Side URL Redirect (WSTG-CLNT-04)
+**Code Patterns to Detect**:
+- Open redirects
+- Unvalidated redirect parameters
+
+### 4.11.5 Testing for CSS Injection (WSTG-CLNT-05)
+**Code Patterns to Detect**:
+- User-controlled CSS
+- Style attribute injection
+
+### 4.11.6 Testing for Client-Side Resource Manipulation (WSTG-CLNT-06)
+**Code Patterns to Detect**:
+- User-controlled resource URLs
+- JavaScript/CSS path manipulation
+
+### 4.11.7 Testing Cross Origin Resource Sharing (WSTG-CLNT-07)
+**Code Patterns to Detect**:
+- Access-Control-Allow-Origin: *
+- Reflected Origin header
+- Credentials with wildcard origin
+
+**Python Examples**:
+```python
+# BAD - Overly permissive CORS
+@app.after_request
+def add_cors(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    return response
+
+# GOOD - Restricted CORS
+ALLOWED_ORIGINS = ['https://app.example.com', 'https://admin.example.com']
+
+@app.after_request
+def add_cors(response):
+    origin = request.headers.get('Origin')
+    if origin in ALLOWED_ORIGINS:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+    return response
+```
+
+### 4.11.8 Testing for Cross Site Flashing (WSTG-CLNT-08)
+**Code Patterns to Detect**:
+- Flash/Silverlight security issues (legacy)
+- SWF file vulnerabilities
+
+### 4.11.9 Testing for Clickjacking (WSTG-CLNT-09)
+**Code Patterns to Detect**:
+- Missing X-Frame-Options header
+- Missing Content-Security-Policy frame-ancestors
+
+**Python Examples**:
+```python
+# BAD - No clickjacking protection
+@app.route('/sensitive')
+def sensitive():
+    return render_template('sensitive.html')
+
+# GOOD - Clickjacking protection
+@app.after_request
+def set_frame_options(response):
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Content-Security-Policy'] = "frame-ancestors 'none'"
+    return response
+```
+
+### 4.11.10 Testing WebSockets (WSTG-CLNT-10)
+**Code Patterns to Detect**:
+- Missing origin validation
+- No authentication on WebSocket connections
+- Unencrypted WebSocket (ws:// instead of wss://)
+
+### 4.11.11 Testing Web Messaging (WSTG-CLNT-11)
+**Code Patterns to Detect**:
+- postMessage without origin validation
+- Untrusted message handling
+
+**JavaScript Examples**:
+```javascript
+// BAD - No origin validation
+window.addEventListener('message', function(event) {
+    document.getElementById('output').innerHTML = event.data;
+});
+
+// GOOD - Validate origin
+window.addEventListener('message', function(event) {
+    if (event.origin !== 'https://trusted.example.com') {
+        return;
+    }
+    document.getElementById('output').textContent = event.data;
+});
+```
+
+### 4.11.12 Testing Browser Storage (WSTG-CLNT-12)
+**Code Patterns to Detect**:
+- Sensitive data in localStorage/sessionStorage
+- Unencrypted tokens in browser storage
+
+**JavaScript Examples**:
+```javascript
+// BAD - Sensitive data in localStorage
+localStorage.setItem('authToken', token);
+localStorage.setItem('ssn', user.ssn);
+
+// GOOD - Use secure, HttpOnly cookies for sensitive data
+// Store only non-sensitive data in localStorage
+localStorage.setItem('theme', 'dark');
+localStorage.setItem('language', 'en');
+
+// For session data, use sessionStorage (cleared on tab close)
+sessionStorage.setItem('tempData', data);
+```
+
+### 4.11.13 Testing for Cross Site Script Inclusion (WSTG-CLNT-13)
+**Code Patterns to Detect**:
+- Dynamic script inclusion from untrusted sources
+- JSONP vulnerabilities
+- Cross-site script inclusion attacks
+
+---
+
+## 4.12 API Testing
+
+### 4.12.1 Testing GraphQL (WSTG-APIT-01)
+**Code Patterns to Detect**:
+- Introspection enabled in production
+- No query depth limiting
+- No query complexity analysis
+- Missing field-level authorization
+
+**Python Examples**:
+```python
+# BAD - GraphQL introspection enabled in production
+schema = graphene.Schema(
+    query=Query,
+    mutation=Mutation
+)
+# Introspection enabled by default
+
+# GOOD - Disable introspection in production
+from graphql import validate, parse
+from graphql.validation import NoSchemaIntrospectionCustomRule
+
+schema = graphene.Schema(
+    query=Query,
+    mutation=Mutation
+)
+
+# Disable introspection in production
+if not app.config['DEBUG']:
+    app.add_url_rule('/graphql', view_func=GraphQLView.as_view(
+        'graphql',
+        schema=schema,
+        validation_rules=[NoSchemaIntrospectionCustomRule]
+    ))
+
+# GOOD - Query depth limiting
+from graphql_depth_limit import depth_limit_validator
+
+app.add_url_rule('/graphql', view_func=GraphQLView.as_view(
+    'graphql',
+    schema=schema,
+    validation_rules=[depth_limit_validator(max_depth=5)]
+))
+
+# GOOD - Rate limiting
+from flask_limiter import Limiter
+
+limiter = Limiter(app, key_func=get_remote_address)
+
+@app.route('/graphql', methods=['POST'])
+@limiter.limit("100/hour")
+def graphql():
+    return execute_graphql_query(request.json)
+```
+
+**JavaScript Examples**:
+```javascript
+// BAD - No depth limiting
+const schema = makeExecutableSchema({ typeDefs, resolvers });
+
+// GOOD - Query depth limiting
+import depthLimit from 'graphql-depth-limit';
+
+const server = new ApolloServer({
+  schema,
+  validationRules: [depthLimit(10)],
+  introspection: false,  // Disable in production
+  playground: false,     // Disable in production
+});
+```
+
+### General API Security Patterns
+**Code Patterns to Detect**:
+- Missing API authentication
+- No API rate limiting
+- Verbose error messages in API responses
+- Missing input validation on API endpoints
+- No API versioning
+- Unsafe HTTP methods enabled
+
+**Python Examples**:
+```python
+# BAD - No API authentication
+@app.route('/api/users')
+def api_users():
+    return jsonify(User.query.all())
+
+# GOOD - API authentication and authorization
+from functools import wraps
+
+def require_api_key(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        api_key = request.headers.get('X-API-Key')
+        if not api_key or not validate_api_key(api_key):
+            abort(401, "Invalid API key")
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/api/users')
+@require_api_key
+@limiter.limit("1000/hour")
+def api_users():
+    return jsonify(User.query.all())
+```
+
+---
+
+## 🎯 Detection Priority
+
+When analyzing code, prioritize detection in this order:
+
+1. **Critical**: Authentication bypass, SQL injection, RCE, SSRF
+2. **High**: XSS, CSRF, authorization issues, sensitive data exposure
+3. **Medium**: Session management, cryptography weaknesses, error handling
+4. **Low**: Information disclosure, missing security headers
+5. **Info**: Configuration improvements, best practices
+
+---
+
+## 🔍 Analysis Approach
+
+1. **Identify Code Type**: Web framework, API, authentication, data processing
+2. **Load Relevant WSTG Categories**: Focus on applicable testing categories
+3. **Pattern Matching**: Scan for vulnerable code patterns
+4. **Context Analysis**: Verify if mitigations exist
+5. **Severity Assessment**: Classify based on impact and exploitability
+6. **Remediation**: Provide specific fixes with examples
+
+---
+
+## 📚 References
+
+- OWASP WSTG v4.2: https://owasp.org/www-project-web-security-testing-guide/
+- OWASP Top 10: https://owasp.org/www-project-top-ten/
+- CWE Top 25: https://cwe.mitre.org/top25/
+
+---
+
+**Note**: This context complements [`security-review.context`](security-review.context) with web-specific testing patterns. Use both together for comprehensive security analysis.

@@ -1,0 +1,449 @@
+# 🔒 Golang Application Security Context
+#### Assisted by Cursor 🤖 
+
+**Purpose**: Security analysis guidelines for Go applications—vulnerabilities, weaknesses, and secure patterns for AI-powered code review
+
+**Scope**: Go (Golang) source code; use alongside `security-review.context` for OWASP framing and `wstg-testing.context` when reviewing web/API services
+
+---
+
+## 🎯 Core Security Principles
+
+Apply the same principles as in `security-review.context`:
+
+1. **Complete Mediation**: Validate and authorize every access
+2. **Defense in Depth**: Multiple, layered controls
+3. **Least Privilege**: Minimum permissions
+4. **Secure by Default**: Deny by default; no hardcoded secrets
+5. **Secure Data**: Encrypt in transit (TLS) and at rest; no weak crypto
+6. **Isolation**: Avoid shared mechanisms; safe concurrency
+
+---
+
+## 📋 OWASP Top 10 (2021) - Go Patterns
+
+### A01: Broken Access Control
+
+**Patterns to detect**:
+- Handlers without authorization checks before sensitive operations
+- Direct object references (e.g., IDs) used without ownership/role checks
+- Missing access control on API routes or RPC methods
+- Privilege escalation via unchecked role or scope
+
+**Go Examples**:
+```go
+// BAD: No access control
+func (h *Handler) DeleteUser(c *gin.Context) {
+    id := c.Param("id")
+    h.db.DeleteUser(id)
+}
+
+// GOOD: Check permissions
+func (h *Handler) DeleteUser(c *gin.Context) {
+    if !h.hasRole(c, "admin") {
+        c.AbortWithStatus(http.StatusForbidden)
+        return
+    }
+    id := c.Param("id")
+    if err := h.db.DeleteUser(id); err != nil {
+        c.AbortWithStatus(http.StatusInternalServerError)
+        return
+    }
+}
+```
+
+### A02: Cryptographic Failures
+
+**Patterns to detect**:
+- `math/rand` for security-sensitive values (tokens, nonces, keys)
+- Weak hashes (MD5, SHA1) for passwords or integrity
+- Hardcoded keys, IVs, or passwords
+- TLS verification disabled (`InsecureSkipVerify: true`)
+- Weak or deprecated algorithms (DES, RC4, MD5, SHA1)
+
+**Go Examples**:
+```go
+// BAD: Weak random for security
+import "math/rand"
+token := fmt.Sprintf("%d", rand.Int63())
+
+// GOOD: Cryptographically secure random
+import "crypto/rand"
+import "encoding/hex"
+b := make([]byte, 32)
+if _, err := rand.Read(b); err != nil {
+    return "", err
+}
+token := hex.EncodeToString(b)
+return token, nil
+
+// BAD: Weak hash for password
+import "crypto/sha1"
+h := sha1.Sum([]byte(password))
+
+// GOOD: Use bcrypt or scrypt (e.g. golang.org/x/crypto/bcrypt)
+import "golang.org/x/crypto/bcrypt"
+hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+
+// BAD: Disable TLS verification
+tlsConfig := &tls.Config{InsecureSkipVerify: true}
+
+// GOOD: Verify TLS (default); use proper CA pool for custom certs
+tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+```
+
+### A03: Injection
+
+**Patterns to detect**:
+- SQL built with `fmt.Sprintf`, `+`, or `strings.Join` and user input
+- Command execution with `exec.Command` and unsanitized user input
+- LDAP, NoSQL, or OS command injection
+- Path injection in `os.Open`, `ioutil.ReadFile`, or `filepath.Join` with user input
+
+**Go Examples**:
+```go
+// BAD: SQL injection
+query := fmt.Sprintf("SELECT * FROM users WHERE id = '%s'", userInput)
+db.Query(query)
+
+// GOOD: Parameterized query
+db.Query("SELECT * FROM users WHERE id = ?", userInput)
+// or db.Exec("SELECT * FROM users WHERE id = $1", userInput) for PostgreSQL
+
+// BAD: Command injection
+cmd := exec.Command("sh", "-c", "ls "+userInput)
+cmd.Run()
+
+// GOOD: No shell; pass arguments as slice; validate/sanitize userInput
+cmd := exec.Command("ls", userInput)  // still validate userInput for path traversal
+cmd.Run()
+
+// BAD: Path traversal
+path := filepath.Join("/data", req.URL.Query().Get("file"))
+os.ReadFile(path)
+
+// GOOD: Validate path stays under base (Clean joined path, then check Rel)
+base := filepath.Clean("/data")
+path := filepath.Clean(filepath.Join(base, req.URL.Query().Get("file")))
+rel, err := filepath.Rel(base, path)
+if err != nil || strings.HasPrefix(rel, "..") {
+    http.Error(w, "invalid path", http.StatusBadRequest)
+    return
+}
+os.ReadFile(path)
+```
+
+### A04: Insecure Design
+
+**Patterns to detect**:
+- Missing authn/authz in design
+- Insecure defaults (e.g., bind to 0.0.0.0 without need)
+- No rate limiting or abuse controls
+- Trust boundaries not enforced in code paths
+
+### A05: Security Misconfiguration
+
+**Patterns to detect**:
+- Default or empty credentials
+- Debug or verbose logging in production
+- Unnecessary HTTP methods or routes enabled
+- Missing security headers (CSP, HSTS, X-Content-Type-Options)
+- Overly permissive CORS
+- Exposed `.env`, config files, or secrets in repo
+
+**Go Examples**:
+```go
+// BAD: Debug in production
+log.SetFlags(log.Llongfile)
+debugMode = true
+
+// BAD: Hardcoded secret
+const apiKey = "sk-1234567890abcdef"
+
+// GOOD: Configuration from environment
+apiKey := os.Getenv("API_KEY")
+if apiKey == "" {
+    log.Fatal("API_KEY required")
+}
+```
+
+### A06: Vulnerable and Outdated Components
+
+**Patterns to detect**:
+- Old or unmaintained `go.mod` dependencies
+- Known-vulnerable packages (check with `govulncheck`, `nancy`, or similar)
+- Replaced or deprecated standard library usage
+
+**Check**: Run `govulncheck ./...` and keep `go.mod` updated.
+
+### A07: Identification and Authentication Failures
+
+**Patterns to detect**:
+- Weak password policy (length, complexity)
+- No MFA or optional MFA for sensitive actions
+- Session fixation or predictable session IDs
+- Insecure session storage (client-side only, no signing/encryption)
+- Use of `math/rand` for session or CSRF tokens
+
+**Go Examples**:
+```go
+// BAD: Weak password check
+if len(password) >= 6 {
+    return nil
+}
+
+// GOOD: Strong policy and use bcrypt
+if len(password) < 12 || !hasUpper(password) || !hasLower(password) || !hasDigit(password) {
+    return errors.New("password does not meet policy")
+}
+hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+if err != nil {
+    return err
+}
+```
+
+### A08: Software and Data Integrity Failures
+
+**Patterns to detect**:
+- Deserializing untrusted data (e.g., `encoding/gob`, `encoding/json` into sensitive structs) without validation
+- Unsafe use of `unsafe` or CGO with untrusted input
+- Missing integrity checks (signatures, hashes) on updates or external data
+- Insecure CI/CD (injectable scripts, unsigned artifacts)
+
+**Go Examples**:
+```go
+// BAD: Decode untrusted input without validation
+var payload MyStruct
+if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+    return err
+}
+// Use payload without length/size or schema validation
+
+// GOOD: Limit size, validate schema, then use
+r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+var payload MyStruct
+if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+    return err
+}
+if err := validatePayload(&payload); err != nil {
+    return err
+}
+```
+
+### A09: Security Logging and Monitoring Failures
+
+**Patterns to detect**:
+- No logging of auth failures, access denials, or sensitive actions
+- Logging secrets, tokens, or PII in plaintext
+- No alerting or correlation for security events
+
+**Go Examples**:
+```go
+// BAD: Logging secret
+log.Printf("Login attempt for user %s with password %s", user, password)
+
+// GOOD: Log event only
+log.Printf("Login attempt for user %s failed", user)
+```
+
+### A10: Server-Side Request Forgery (SSRF)
+
+**Patterns to detect**:
+- `http.Get`, `http.Post`, or client.Do with user-controlled URL
+- No allowlist of hosts/schemes; access to internal or cloud metadata
+
+**Go Examples**:
+```go
+// BAD: SSRF
+url := r.URL.Query().Get("url")
+resp, err := http.Get(url)
+
+// GOOD: Validate URL and restrict to allowlist; use client with timeout
+urlStr := r.URL.Query().Get("url")
+u, err := url.Parse(urlStr)
+if err != nil || u.Scheme != "https" || !isAllowedHost(u.Host) {
+    http.Error(w, "invalid url", http.StatusBadRequest)
+    return
+}
+client := &http.Client{Timeout: 10 * time.Second}
+resp, err := client.Get(urlStr)
+```
+
+---
+
+## 🦫 Common Go Security Patterns
+
+### Cryptographically Secure Randomness
+
+**Pattern**: Use `crypto/rand` for tokens, nonces, keys, session IDs.
+
+```go
+// BAD
+import "math/rand"
+id := rand.Intn(1000000)
+
+// GOOD
+import "crypto/rand"
+import "encoding/binary"
+var id uint32
+binary.Read(rand.Reader, binary.BigEndian, &id)
+```
+
+### SQL and Query Building
+
+**Pattern**: Use parameterized queries only; never concatenate user input.
+
+```go
+// BAD
+db.Exec("INSERT INTO users (name) VALUES ('" + name + "')")
+
+// GOOD
+db.Exec("INSERT INTO users (name) VALUES (?)", name)
+```
+
+### Command Execution
+
+**Pattern**: Avoid shell; use `exec.Command` with a slice of arguments; validate/sanitize input.
+
+```go
+// BAD
+exec.Command("sh", "-c", userCmd)
+
+// GOOD
+exec.Command("binary", arg1, arg2)  // args from validated/sanitized input
+```
+
+### Path Traversal
+
+**Pattern**: Resolve paths under a base directory; clean the joined path, then check `filepath.Rel` so the result does not start with `..`.
+
+```go
+// BAD
+f, _ := os.Open(filepath.Join("/data", req.FormValue("file")))
+
+// GOOD
+base := filepath.Clean("/data")
+reqPath := filepath.Clean(filepath.Join(base, req.FormValue("file")))
+rel, err := filepath.Rel(base, reqPath)
+if err != nil || strings.HasPrefix(rel, "..") {
+    return err
+}
+f, err := os.Open(reqPath)
+```
+
+### Insecure TLS
+
+**Pattern**: Do not disable certificate verification; use `tls.Config` with `MinVersion: tls.VersionTLS12` and default verification.
+
+```go
+// BAD
+&http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+
+// GOOD
+&http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
+```
+
+### Hardcoded Secrets
+
+**Pattern**: No API keys, passwords, or tokens in source; use environment or secret manager.
+
+```go
+// BAD
+const dbPassword = "super_secret"
+
+// GOOD
+dbPassword := os.Getenv("DB_PASSWORD")
+```
+
+### Goroutines and Concurrency
+
+**Pattern**: Avoid leaking sensitive data via closures; don’t pass secrets to goroutines unnecessarily; use context for cancellation. (In Go 1.22+, loop variables are per-iteration, but explicit parameter passing remains clearer and works across versions.)
+
+```go
+// BAD: Capturing loop variable (pre-1.22: all goroutines can see the same final value)
+for _, secret := range secrets {
+    go func() {
+        sendToExternal(secret)
+    }()
+}
+
+// GOOD: Explicit parameter, limit scope
+for _, s := range secrets {
+    secret := s
+    go func(sec string) {
+        sendToExternal(sec)
+    }(secret)
+}
+```
+
+### Unsafe and CGO
+
+**Pattern**: Use `unsafe` and CGO only when necessary; never expose untrusted input to them without strict validation and bounds checks.
+
+### HTTP Client Timeouts
+
+**Pattern**: Always set timeouts to avoid resource exhaustion and SSRF hang.
+
+```go
+// BAD
+http.Get(url)
+
+// GOOD
+client := &http.Client{Timeout: 10 * time.Second}
+client.Get(url)
+```
+
+### Dependency Hygiene
+
+**Pattern**: Minimal `go.mod`; run `go mod tidy` and `govulncheck ./...`; replace vulnerable modules.
+
+---
+
+## 🔍 Analysis Workflow
+
+1. **Parse code**: Identify handlers, packages, imports (`database/sql`, `os/exec`, `net/http`, `crypto/rand` vs `math/rand`, `unsafe`, CGO).
+2. **Pattern match**: Find BAD patterns above (injection, weak crypto, SSRF, path traversal, misconfiguration).
+3. **Severity**:
+   - **Critical**: RCE, auth bypass, SQL/command injection, SSRF to internal/metadata
+   - **High**: Sensitive data exposure, weak crypto, missing authz
+   - **Medium**: Weak validation, insecure defaults, missing timeouts
+   - **Low**: Info disclosure, missing logging, dependency warnings
+   - **Info**: Best practices, hardening suggestions
+4. **Context**: Check for mitigations (validation, allowlists, parameterized queries).
+5. **Remediation**: Suggest concrete Go code changes and point to OWASP/CWE where relevant.
+
+---
+
+## 📊 Output Format
+
+Use the same finding structure as in `security-review.context`:
+
+- **Critical/High/Medium/Low/Info**: [Vulnerability type]
+- **Location**: `file.go:line`
+- **OWASP/CWE**: When applicable
+- **Description**, **Vulnerable code**, **Risk**, **Remediation** (with Go examples), **References**
+
+---
+
+## ⚠️ Important Rules
+
+1. **Do not modify code without explicit user approval**
+2. **Show preview before suggesting changes**
+3. **Explain impact in Go context** (e.g., goroutine safety, stdlib vs third-party)
+4. **Respect `.secdevaiignore`**
+5. **Prefer standard library and well-maintained packages** (e.g. `golang.org/x/crypto`)
+6. **Be specific and actionable**; link to [Go Security](https://go.dev/security/) or OWASP when useful
+
+---
+
+## 📚 References
+
+- [Go Security](https://go.dev/security/)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [CWE Top 25](https://cwe.mitre.org/top25/)
+- [govulncheck](https://go.dev/blog/vuln)
+- [Secure Coding in Go](https://github.com/OWASP/Go-SCP)
+
+---
+
+**Note**: This context focuses on Go-specific vulnerabilities and weaknesses. Use with [`security-review.context`](security-review.context) for OWASP Top 10 framing and with [`wstg-testing.context`](wstg-testing.context) when reviewing web or API services written in Go.

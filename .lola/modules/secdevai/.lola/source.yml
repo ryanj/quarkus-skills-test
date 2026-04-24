@@ -1,0 +1,3 @@
+content_dirname: lola-module
+source: https://github.com/RedHatProductSecurity/secdevai
+type: git

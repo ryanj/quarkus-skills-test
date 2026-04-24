@@ -1,0 +1,24 @@
+# SecDevAI ignore patterns
+# Files and directories to exclude from security reviews
+# Binary/media files are excluded automatically by the review skill.
+# Add project-specific patterns below.
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
