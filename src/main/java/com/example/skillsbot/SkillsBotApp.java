@@ -23,7 +23,6 @@ public class SkillsBotApp implements QuarkusApplication {
             String input = scanner.nextLine();
 
             if (input == null || input.trim().isEmpty()) {
-                //input = " ";
                 continue;
             }
 
