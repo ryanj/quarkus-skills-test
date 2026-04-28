@@ -2,7 +2,7 @@ package com.example.skillsbot;
 
 import io.quarkus.runtime.QuarkusApplication;
 import io.quarkus.runtime.annotations.QuarkusMain;
-
+import io.smallrye.common.annotation.Blocking;
 import jakarta.inject.Inject;
 import java.util.Scanner;
 
