@@ -36,7 +36,6 @@ class ExtraTools {
         if (!resolved.startsWith(baseDir)) {
             throw new SecurityException("Access outside working directory is not allowed.");
         }
-        Path path = Path.of(filename);
         Files.write(resolved, content.getBytes());
     }
 

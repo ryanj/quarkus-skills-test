@@ -60,8 +60,8 @@
         <dependency>
             <groupId>io.quarkiverse.langchain4j</groupId>
             <artifactId>quarkus-langchain4j-skills</artifactId>
-          <!--  <version>1.8.4</version> -->
-										<!--<version>1.13</version>-->
+            <version>1.9.1</version>
+						<!--<version>1.13.0</version>-->
         </dependency>
         <!--
         <dependency>
