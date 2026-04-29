@@ -27,6 +27,19 @@ class ExtraTools {
         return java.time.LocalTime.now().toString();
     }
 
+    @Tool("Write to a file using filename and content")
+    public void writeFile(String filename, String content) throws IOException {
+        Path baseDir = Paths.get("").toAbsolutePath().normalize();
+        Path userInput = Paths.get(filename);
+        Path resolved = baseDir.resolve(userInput).normalize();
+
+        if (!resolved.startsWith(baseDir)) {
+            throw new SecurityException("Access outside working directory is not allowed.");
+        }
+        Path path = Path.of(filename);
+        Files.write(resolved, content.getBytes());
+    }
+
     @Tool("Read file by name")
     public String readFile(String filename) throws IOException {
         Path baseDir = Paths.get("").toAbsolutePath().normalize();

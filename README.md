@@ -14,3 +14,8 @@ To test the `poem-writing` skill, enter the following prompt:
 ```
 /poem-writing
 ```
+
+Run the `/hello` skill to test a mult-step workflow:
+```shell
+/hello
+```
