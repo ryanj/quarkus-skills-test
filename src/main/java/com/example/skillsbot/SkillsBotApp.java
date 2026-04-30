@@ -48,7 +48,11 @@ public class SkillsBotApp implements QuarkusApplication {
 
         }catch (Exception e) {
             //e.printStackTrace();
-            System.err.println("Error: " + e.getMessage());
+            String errMsg = e.getMessage();
+            // Ignore errors related to empty input
+            if (!errMsg.equals("No line found")) {
+                System.err.println("Error: " + errMsg + "\n");
+            }
         }
         return 0;
     }
