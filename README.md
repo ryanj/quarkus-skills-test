@@ -22,6 +22,11 @@ Optionally enable ollama support in `pom.xml`
 
 ## Basic SKILL interactions:
 
+Check to see which skills are available:
+```shell
+what skills do you have?
+```
+
 To test the `poem-writing` skill, enter the following command at the prompt:
 ```
 /poem-writing
@@ -29,7 +34,7 @@ To test the `poem-writing` skill, enter the following command at the prompt:
 
 Conduct a security review of the codebase using the `secdevai` skills (from lola):
 ```shell
-/secdevai review
+/secdevai review @ src/main/java/com/example/skillsbot/SkillsBotApp.java
 ```
 
 Run the `/hello` skill to test a mult-step workflow:
