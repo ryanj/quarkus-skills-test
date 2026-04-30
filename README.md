@@ -1,10 +1,12 @@
-# quarkus-skills
+# Quarkus Skills Runner
 
-This project uses Quarkus, the Supersonic Subatomic Java Framework.
+Agentic Skills with Quarkus and LangChain4j
 
-If you want to learn more about Quarkus, please visit its website: <https://quarkus.io/>.
+ * <https://quarkus.io/>
+ * <https://agentskills.io/>
+ * <https://docs.quarkiverse.io/quarkus-langchain4j/dev/skills.html>
 
-## Configure:
+## Configuration:
 
 Export your `OPENAI_API_KEY`:
 
@@ -12,9 +14,9 @@ Export your `OPENAI_API_KEY`:
 export OPENAI_API_KEY="YOUR_OPENAI_API_KEY"
 ```
 
-Optionally configure a custom `quarkus.langchain4j.openai.base-url` in `src/main/resources/application.properties`.
+Optionally configure a custom `quarkus.langchain4j.openai.base-url` in `src/main/resources/application.properties`
 
-Optionally update `pom.xml` to enable ollama support.
+Optionally enable ollama support in `pom.xml`
 
 ## Build and Run:
 
@@ -24,17 +26,17 @@ Optionally update `pom.xml` to enable ollama support.
 
 ## Basic SKILL interactions:
 
-To test the `poem-writing` skill, enter the following prompt:
+To test the `poem-writing` skill, enter the following command at the prompt:
 ```
 /poem-writing
-```
-
-Run the `/hello` skill to test a mult-step workflow:
-```shell
-/hello
 ```
 
 Conduct a security review of the codebase using the `secdevai` skills (from lola):
 ```shell
 /secdevai review
+```
+
+Run the `/hello` skill to test a mult-step workflow:
+```shell
+/hello
 ```
