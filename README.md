@@ -1,10 +1,6 @@
 # Quarkus Skills Runner
 
-Agentic Skills with Quarkus and LangChain4j
-
- * <https://quarkus.io/>
- * <https://agentskills.io/>
- * <https://docs.quarkiverse.io/quarkus-langchain4j/dev/skills.html>
+Agentic [Skills](https://agentskills.io/) with [Quarkus](https://quarkus.io/) and [LangChain4j](https://docs.quarkiverse.io/quarkus-langchain4j/dev/skills.html)
 
 ## Configuration:
 
