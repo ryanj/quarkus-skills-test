@@ -50,13 +50,11 @@
             <artifactId>quarkus-junit</artifactId>
             <scope>test</scope>
         </dependency>
-        <!--
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-experimental-skills-shell</artifactId>
             <version>1.13.1-beta23</version>
         </dependency>
-        -->
         <dependency>
             <groupId>io.quarkiverse.langchain4j</groupId>
             <artifactId>quarkus-langchain4j-skills</artifactId>
